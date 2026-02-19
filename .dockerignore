@@ -1,0 +1,50 @@
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+claude.md
+*.md
+
+# Environment files
+.env
+.env.local
+
+# Testing
+test_*.py
+conftest.py
+.pytest_cache/
+.coverage
+.coveragerc
+htmlcov/
+pytest.ini
+run_tests.py
+
+# Backup
+backup/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
