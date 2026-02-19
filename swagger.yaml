@@ -1,0 +1,288 @@
+openapi: 3.0.3
+info:
+  title: Email Sending API
+  description: |
+    FastAPI-based email sending service deployed on Google Cloud Run.
+
+    Features:
+    - Email validation with regex
+    - Domain blocking and allowlisting via Firestore
+    - Email delivery via SendGrid
+    - BigQuery audit logging for every request
+    - Requestor identity tracking via `X-Requestor-Email` header
+  version: 2.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: https://{service-url}
+    description: Cloud Run deployment
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /:
+    get:
+      summary: Root endpoint
+      description: Quick service verification endpoint.
+      operationId: root
+      tags:
+        - Health
+      responses:
+        "200":
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RootResponse"
+              example:
+                status: healthy
+                service: Email Sending API
+
+  /health:
+    get:
+      summary: Health check
+      description: Health check endpoint used by Cloud Run to verify the service is healthy.
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: healthy
+
+  /send-email:
+    post:
+      summary: Send an email
+      description: |
+        Validates email addresses, checks against blocked/allowed domain lists
+        in Firestore, and sends the email via SendGrid.
+
+        **Processing steps:**
+        1. Pydantic validates email format and required fields
+        2. All recipient domains are checked against the blocked domains list
+        3. All recipient domains are checked against the allowed domains list (if configured)
+        4. Email is sent via SendGrid
+        5. Request is logged to BigQuery for audit
+
+        **Domain policy:**
+        - Blocked domains are checked first — any match returns 403
+        - Allowed domains are checked second — if an allowlist exists and a domain is not on it, returns 403
+        - An empty allowlist means all (non-blocked) domains are permitted
+        - Subdomain matching is supported (e.g., `sub.blocked.com` matches `blocked.com`)
+      operationId: sendEmail
+      tags:
+        - Email
+      parameters:
+        - name: X-Requestor-Email
+          in: header
+          required: false
+          description: Email address of the person or system making the request. Used for audit logging. Defaults to `"unknown"` if not provided.
+          schema:
+            type: string
+            format: email
+            example: requestor@example.com
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailRequest"
+            examples:
+              basic:
+                summary: Basic email
+                value:
+                  to_list:
+                    - recipient@example.com
+                  mail_body: "<p>Hello, this is a test email.</p>"
+              with_cc:
+                summary: Email with CC recipients
+                value:
+                  to_list:
+                    - recipient1@example.com
+                    - recipient2@example.com
+                  cc_list:
+                    - cc1@example.com
+                    - cc2@example.com
+                  mail_body: "<h1>Welcome</h1><p>This email has CC recipients.</p>"
+      responses:
+        "200":
+          description: Email sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendEmailSuccess"
+              example:
+                message: Email sent successfully
+                status_code: 202
+        "403":
+          description: Forbidden — recipient domain is blocked or not in the allowed list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                blocked:
+                  summary: Blocked domain
+                  value:
+                    detail: "Email address 'user@blocked.com' belongs to a blocked domain"
+                not_allowed:
+                  summary: Domain not in allowlist
+                  value:
+                    detail: "Email address 'user@unknown.com' does not belong to an allowed domain"
+        "422":
+          description: Unprocessable Entity — validation error or missing configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
+              examples:
+                invalid_email:
+                  summary: Invalid email format
+                  value:
+                    detail:
+                      - loc:
+                          - body
+                          - to_list
+                          - 0
+                        msg: "Value error, Invalid email address: not-an-email"
+                        type: value_error
+                empty_to_list:
+                  summary: Empty recipient list
+                  value:
+                    detail:
+                      - loc:
+                          - body
+                          - to_list
+                        msg: "Value error, to_list cannot be empty"
+                        type: value_error
+                empty_body:
+                  summary: Empty mail body
+                  value:
+                    detail:
+                      - loc:
+                          - body
+                          - mail_body
+                        msg: "Value error, mail_body cannot be empty"
+                        type: value_error
+                missing_config:
+                  summary: Missing configuration (e.g., SENDER_EMAIL)
+                  value:
+                    detail: "SENDER_EMAIL environment variable is not set"
+        "502":
+          description: Bad Gateway — upstream service failure (SendGrid or Secret Manager)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "SendGrid API returned status 400: Bad Request"
+        "500":
+          description: Internal Server Error — unexpected failure
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: An unexpected error occurred while sending the email
+
+components:
+  schemas:
+    EmailRequest:
+      type: object
+      required:
+        - to_list
+        - mail_body
+      properties:
+        to_list:
+          type: array
+          items:
+            type: string
+            format: email
+          minItems: 1
+          maxItems: 500
+          description: List of recipient email addresses (TO). Maximum 500.
+          example:
+            - recipient@example.com
+        cc_list:
+          type: array
+          items:
+            type: string
+            format: email
+          maxItems: 500
+          nullable: true
+          description: Optional list of CC recipient email addresses. Maximum 500. Defaults to null.
+          example:
+            - cc@example.com
+        mail_body:
+          type: string
+          minLength: 1
+          description: HTML body of the email. Cannot be empty or whitespace-only.
+          example: "<p>Hello, this is a test email.</p>"
+
+    SendEmailSuccess:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Email sent successfully
+        status_code:
+          type: integer
+          example: 202
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Human-readable error message
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                description: Location of the error (e.g., ["body", "to_list"])
+              msg:
+                type: string
+                description: Error message
+              type:
+                type: string
+                description: Error type identifier
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+
+    RootResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        service:
+          type: string
+          example: Email Sending API
+
+tags:
+  - name: Health
+    description: Service health and readiness endpoints
+  - name: Email
+    description: Email sending operations
