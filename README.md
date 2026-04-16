@@ -22,9 +22,13 @@ Send an email to specified recipients with optional CC.
 {
   "to_list": ["recipient1@example.com", "recipient2@example.com"],
   "cc_list": ["cc@example.com"],
+  "subject": "Hello from Cloud Run",
   "mail_body": "<h1>Hello</h1><p>This is an HTML email</p>"
 }
 ```
+
+> `subject` is now a **required** field on every request. The legacy
+> `EMAIL_SUBJECT` env var is no longer consulted.
 
 **Response (Success):**
 ```json
@@ -57,30 +61,52 @@ Send an email to specified recipients with optional CC.
 | `SENDER_EMAIL` | Yes | Email address to send from | - |
 | `SENDGRID_API_KEY` | Yes* | SendGrid API key | - |
 | `GCP_PROJECT_ID` | Yes* | GCP Project ID (for Secret Manager) | - |
-| `EMAIL_SUBJECT` | No | Default email subject | `Notification` |
 | `SENDGRID_SECRET_NAME` | No | Secret Manager secret name | `sendgrid-api-key` |
 | `SENDGRID_SECRET_VERSION` | No | Secret version | `latest` |
 | `FIRESTORE_COLLECTION` | No | Firestore collection name | `config` |
-| `FIRESTORE_DOCUMENT` | No | Firestore document name | `blocked_domains` |
+| `FIRESTORE_BLOCKED_DOCUMENT` | No | Blocked domains document | `blocked_domains` |
+| `FIRESTORE_ALLOWED_DOCUMENT` | No | Allowed domains document | `allowed_domains` |
+| `FIRESTORE_DATABASE` | No | Firestore database id (non-default) | `default-dev` (see note) |
+| `BQ_PROJECT_ID` | No | Project for BigQuery audit logging | falls back to `GCP_PROJECT_ID` |
+| `BQ_DATASET` | No | BQ dataset for audit log | `email_api_logs` |
+| `BQ_TABLE` | No | BQ table for audit log | `audit_log` |
+| `BQ_AUDIT_ENABLED` | No | Kill-switch for BQ writes | `true` |
+| `MAX_RECIPIENTS` | No | Max TO/CC recipients per request | `500` |
 
 *Either `SENDGRID_API_KEY` or `GCP_PROJECT_ID` must be set.
 
 ## Firestore Setup
 
-Create a Firestore document with the following structure:
+The service reads two documents in the `config` collection (configurable via
+`FIRESTORE_BLOCKED_DOCUMENT` / `FIRESTORE_ALLOWED_DOCUMENT`):
 
 **Collection:** `config`
-**Document:** `blocked_domains`
-**Structure:**
+**Documents:** `blocked_domains`, `allowed_domains`
+
+The `domains` field may be either an **array** *or* a **map** (the service
+normalises both shapes — maps are flattened to a list of their values). Example:
+
 ```json
+// array form
+{ "domains": ["blocked-domain.com", "spam-domain.org"] }
+
+// map form (each key is an arbitrary id)
 {
-  "domains": [
-    "blocked-domain.com",
-    "spam-domain.com",
-    "unwanted-domain.org"
-  ]
+  "domains": {
+    "0": "blocked-domain.com",
+    "1": "spam-domain.org"
+  }
 }
 ```
+
+An empty/missing `allowed_domains` document means *no allowlist is enforced*
+(all non-blocked domains are permitted).
+
+### Firestore database id
+If you use a non-default Firestore database (e.g., `default-dev`), the
+service initialises the client with that database id in
+`services/firestore_service.py`. Update the string there (or promote it to
+an env var) for your project.
 
 ## Local Development
 
@@ -194,11 +220,28 @@ Test the API using curl:
 ```bash
 curl -X POST "https://your-cloud-run-url/send-email" \
   -H "Content-Type: application/json" \
+  -H "X-Requestor-Email: requestor@example.com" \
   -d '{
     "to_list": ["recipient@example.com"],
     "cc_list": ["cc@example.com"],
+    "subject": "Test Email",
     "mail_body": "<h1>Test Email</h1><p>This is a test email from the API.</p>"
   }'
+```
+
+### OpenAPI / Swagger
+
+A full OpenAPI 3.0 spec ships at [`swagger.yaml`](swagger.yaml). Every
+endpoint ships with `x-codeSamples` blocks (cURL, Python `requests`,
+JavaScript `fetch`, Node `axios`, Go `net/http`) that render as copy-paste
+code panels in Redoc / SwaggerHub / any viewer that honours the extension.
+
+Render locally with Redoc:
+
+```bash
+npx @redocly/cli preview-docs swagger.yaml
+# or static HTML
+npx @redocly/cli build-docs swagger.yaml -o swagger.html
 ```
 
 ## Error Codes
@@ -206,9 +249,10 @@ curl -X POST "https://your-cloud-run-url/send-email" \
 | Status Code | Description |
 |-------------|-------------|
 | 200 | Email sent successfully |
-| 403 | Blocked domain detected |
-| 422 | Invalid email format |
-| 500 | Internal server error (SendGrid failure, Firestore error, etc.) |
+| 403 | Blocked domain detected, or recipient not in allowlist |
+| 422 | Validation error (invalid email, empty `subject`, empty `mail_body`, missing config) |
+| 502 | Upstream failure (SendGrid non-2xx or Secret Manager error) |
+| 500 | Unexpected internal error |
 
 ## Security Considerations
 

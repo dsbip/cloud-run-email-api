@@ -23,7 +23,7 @@ def _get_firestore_client():
     if _firestore_client is None:
         with _firestore_lock:
             if _firestore_client is None:
-                _firestore_client = firestore.Client()
+                _firestore_client = firestore.Client(database='default-dev')
     return _firestore_client
 
 
@@ -39,9 +39,13 @@ def _fetch_domain_list(document_name: str, label: str) -> List[str]:
 
         if doc.exists:
             data = doc.to_dict()
-            domains = data.get('domains', [])
-            if not isinstance(domains, list):
-                logger.warning(f"{label.capitalize()} domains field is not a list, ignoring")
+            raw_domains = data.get('domains', [])
+            if isinstance(raw_domains, dict):
+                domains = list(raw_domains.values())
+            elif isinstance(raw_domains, list):
+                domains = raw_domains
+            else:
+                logger.warning(f"{label.capitalize()} domains field is neither a list nor a dict, ignoring")
                 return []
             logger.debug(f"Fetched {len(domains)} {label} domains from Firestore")
             return domains

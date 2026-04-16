@@ -37,6 +37,7 @@ def send_email(request: Request, body: EmailRequest):
     client_ip = request.client.host if request.client else "unknown"
     to_list = body.to_list
     cc_list = body.cc_list or []
+    subject = body.subject
 
     try:
         # Step 1: Email validation is done by Pydantic validators
@@ -68,6 +69,7 @@ def send_email(request: Request, body: EmailRequest):
         result = send_email_via_sendgrid(
             to_list=to_list,
             cc_list=cc_list,
+            subject=subject,
             mail_body=body.mail_body
         )
 

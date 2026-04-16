@@ -7,16 +7,25 @@ info:
     Features:
     - Email validation with regex
     - Domain blocking and allowlisting via Firestore
-    - Email delivery via SendGrid
+    - Email delivery via SendGrid with per-request subject
     - BigQuery audit logging for every request
     - Requestor identity tracking via `X-Requestor-Email` header
-  version: 2.0.0
+
+    **Code samples**: Each endpoint below includes ready-to-run `x-codeSamples`
+    for `curl`, `python` (requests) and `javascript` (fetch). In Redoc / Swagger
+    UI variants that honour the `x-codeSamples` vendor extension, these appear
+    as a copy-paste code panel next to the endpoint.
+  version: 2.1.0
   contact:
     name: API Support
 
 servers:
   - url: https://{service-url}
     description: Cloud Run deployment
+    variables:
+      service-url:
+        default: email-api-xxxxxx-uc.a.run.app
+        description: Cloud Run service URL (without protocol)
   - url: http://localhost:8080
     description: Local development
 
@@ -38,6 +47,22 @@ paths:
               example:
                 status: healthy
                 service: Email Sending API
+      x-codeSamples:
+        - lang: curl
+          label: cURL
+          source: |
+            curl -X GET "https://your-service-url/"
+        - lang: python
+          label: Python (requests)
+          source: |
+            import requests
+            r = requests.get("https://your-service-url/")
+            print(r.status_code, r.json())
+        - lang: javascript
+          label: JavaScript (fetch)
+          source: |
+            const res = await fetch("https://your-service-url/");
+            console.log(res.status, await res.json());
 
   /health:
     get:
@@ -55,19 +80,37 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
               example:
                 status: healthy
+      x-codeSamples:
+        - lang: curl
+          label: cURL
+          source: |
+            curl -X GET "https://your-service-url/health"
+        - lang: python
+          label: Python (requests)
+          source: |
+            import requests
+            r = requests.get("https://your-service-url/health")
+            r.raise_for_status()
+            print(r.json())
+        - lang: javascript
+          label: JavaScript (fetch)
+          source: |
+            const res = await fetch("https://your-service-url/health");
+            console.log(await res.json());
 
   /send-email:
     post:
       summary: Send an email
       description: |
         Validates email addresses, checks against blocked/allowed domain lists
-        in Firestore, and sends the email via SendGrid.
+        in Firestore, and sends the email via SendGrid using a caller-supplied
+        `subject`.
 
         **Processing steps:**
-        1. Pydantic validates email format and required fields
+        1. Pydantic validates email format, `subject`, and required fields
         2. All recipient domains are checked against the blocked domains list
         3. All recipient domains are checked against the allowed domains list (if configured)
-        4. Email is sent via SendGrid
+        4. Email is sent via SendGrid with the request-supplied subject
         5. Request is logged to BigQuery for audit
 
         **Domain policy:**
@@ -99,6 +142,7 @@ paths:
                 value:
                   to_list:
                     - recipient@example.com
+                  subject: "Hello from Cloud Run"
                   mail_body: "<p>Hello, this is a test email.</p>"
               with_cc:
                 summary: Email with CC recipients
@@ -109,6 +153,7 @@ paths:
                   cc_list:
                     - cc1@example.com
                     - cc2@example.com
+                  subject: "Welcome"
                   mail_body: "<h1>Welcome</h1><p>This email has CC recipients.</p>"
       responses:
         "200":
@@ -118,6 +163,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/SendEmailSuccess"
               example:
+                status: success
                 message: Email sent successfully
                 status_code: 202
         "403":
@@ -152,14 +198,14 @@ paths:
                           - 0
                         msg: "Value error, Invalid email address: not-an-email"
                         type: value_error
-                empty_to_list:
-                  summary: Empty recipient list
+                empty_subject:
+                  summary: Empty subject
                   value:
                     detail:
                       - loc:
                           - body
-                          - to_list
-                        msg: "Value error, to_list cannot be empty"
+                          - subject
+                        msg: "Value error, subject cannot be empty"
                         type: value_error
                 empty_body:
                   summary: Empty mail body
@@ -173,7 +219,7 @@ paths:
                 missing_config:
                   summary: Missing configuration (e.g., SENDER_EMAIL)
                   value:
-                    detail: "SENDER_EMAIL environment variable is not set"
+                    detail: "SENDER_EMAIL environment variable not set"
         "502":
           description: Bad Gateway — upstream service failure (SendGrid or Secret Manager)
           content:
@@ -181,7 +227,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
-                detail: "SendGrid API returned status 400: Bad Request"
+                detail: "SendGrid API failed with status 400: Bad Request"
         "500":
           description: Internal Server Error — unexpected failure
           content:
@@ -190,6 +236,113 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 detail: An unexpected error occurred while sending the email
+      x-codeSamples:
+        - lang: curl
+          label: cURL
+          source: |
+            curl -X POST "https://your-service-url/send-email" \
+              -H "Content-Type: application/json" \
+              -H "X-Requestor-Email: requestor@example.com" \
+              -d '{
+                "to_list": ["recipient@example.com"],
+                "cc_list": ["cc@example.com"],
+                "subject": "Hello from Cloud Run",
+                "mail_body": "<p>Hello from the Email API.</p>"
+              }'
+        - lang: python
+          label: Python (requests)
+          source: |
+            import requests
+
+            url = "https://your-service-url/send-email"
+            headers = {
+                "Content-Type": "application/json",
+                "X-Requestor-Email": "requestor@example.com",
+            }
+            payload = {
+                "to_list": ["recipient@example.com"],
+                "cc_list": ["cc@example.com"],
+                "subject": "Hello from Cloud Run",
+                "mail_body": "<p>Hello from the Email API.</p>",
+            }
+
+            resp = requests.post(url, json=payload, headers=headers, timeout=30)
+            resp.raise_for_status()
+            print(resp.json())
+        - lang: javascript
+          label: JavaScript (fetch)
+          source: |
+            const res = await fetch("https://your-service-url/send-email", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Requestor-Email": "requestor@example.com",
+              },
+              body: JSON.stringify({
+                to_list: ["recipient@example.com"],
+                cc_list: ["cc@example.com"],
+                subject: "Hello from Cloud Run",
+                mail_body: "<p>Hello from the Email API.</p>",
+              }),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+            console.log(await res.json());
+        - lang: node
+          label: Node.js (axios)
+          source: |
+            const axios = require("axios");
+
+            (async () => {
+              const { data } = await axios.post(
+                "https://your-service-url/send-email",
+                {
+                  to_list: ["recipient@example.com"],
+                  cc_list: ["cc@example.com"],
+                  subject: "Hello from Cloud Run",
+                  mail_body: "<p>Hello from the Email API.</p>",
+                },
+                {
+                  headers: {
+                    "Content-Type": "application/json",
+                    "X-Requestor-Email": "requestor@example.com",
+                  },
+                  timeout: 30000,
+                }
+              );
+              console.log(data);
+            })();
+        - lang: go
+          label: Go (net/http)
+          source: |
+            package main
+
+            import (
+              "bytes"
+              "encoding/json"
+              "fmt"
+              "io"
+              "net/http"
+            )
+
+            func main() {
+              body, _ := json.Marshal(map[string]any{
+                "to_list":   []string{"recipient@example.com"},
+                "cc_list":   []string{"cc@example.com"},
+                "subject":   "Hello from Cloud Run",
+                "mail_body": "<p>Hello from the Email API.</p>",
+              })
+              req, _ := http.NewRequest("POST",
+                "https://your-service-url/send-email",
+                bytes.NewBuffer(body))
+              req.Header.Set("Content-Type", "application/json")
+              req.Header.Set("X-Requestor-Email", "requestor@example.com")
+
+              resp, err := http.DefaultClient.Do(req)
+              if err != nil { panic(err) }
+              defer resp.Body.Close()
+              out, _ := io.ReadAll(resp.Body)
+              fmt.Println(resp.StatusCode, string(out))
+            }
 
 components:
   schemas:
@@ -197,6 +350,7 @@ components:
       type: object
       required:
         - to_list
+        - subject
         - mail_body
       properties:
         to_list:
@@ -219,6 +373,11 @@ components:
           description: Optional list of CC recipient email addresses. Maximum 500. Defaults to null.
           example:
             - cc@example.com
+        subject:
+          type: string
+          minLength: 1
+          description: Email subject line. Cannot be empty or whitespace-only.
+          example: "Hello from Cloud Run"
         mail_body:
           type: string
           minLength: 1
@@ -228,6 +387,9 @@ components:
     SendEmailSuccess:
       type: object
       properties:
+        status:
+          type: string
+          example: success
         message:
           type: string
           example: Email sent successfully

@@ -1,7 +1,10 @@
 # Email Sending API - Learnings and Patterns
 
 ## Project Overview
-FastAPI-based email sending service with domain validation, Firestore integration for blocked/allowed domains, SendGrid API integration, and BigQuery audit logging — designed for Google Cloud Run deployment.
+FastAPI-based email sending service with domain validation, Firestore integration for blocked/allowed domains, SendGrid API integration (with **per-request `subject`**), and BigQuery audit logging — designed for Google Cloud Run deployment.
+
+The OpenAPI spec (`swagger.yaml`) is the source of truth for the public contract
+and embeds copy-paste `x-codeSamples` for curl / Python / JS / Node / Go.
 
 ### Architecture
 The codebase follows a **modular architecture** with clear separation of concerns:
@@ -28,7 +31,9 @@ bt/
 ├── .env.example                     # Environment variable documentation
 ├── .coveragerc                      # Coverage configuration
 ├── pytest.ini                       # Pytest configuration
-└── run_tests.py                     # Test runner script
+├── run_tests.py                     # Test runner script
+├── swagger.yaml                     # OpenAPI 3.0 spec (with x-codeSamples per endpoint)
+└── README.md                        # Human-facing docs
 ```
 
 ---
@@ -51,7 +56,9 @@ bt/
 
 #### Firestore
 - **Pattern**: Use hierarchical document structure: `collection/document/field`
-- **Implementation**: `config` collection → `blocked_domains` and `allowed_domains` documents → `domains` array each
+- **Implementation**: `config` collection → `blocked_domains` and `allowed_domains` documents → `domains` field (array *or* map)
+- **Shape-tolerant**: `_fetch_domain_list` accepts both `domains: [...]` (array) and `domains: {k: v}` (map, flattened via `list(map.values())`). Anything else logs a warning and returns `[]`.
+- **Non-default DB**: `firestore.Client(database='default-dev')` is used — switch or promote to env var if your project uses the `(default)` db.
 - **Shared Helper**: Use `_fetch_domain_list(document_name, label)` to avoid duplicating Firestore read logic
 - **Error Handling**: Always check if document exists before accessing data
 - **Mistake to Avoid**: Don't assume Firestore documents always exist; handle missing documents gracefully
@@ -64,7 +71,8 @@ bt/
 
 ### 4. **SendGrid Integration**
 - **Pattern**: Use the official SendGrid Python SDK
-- **Implementation**: Create `Mail` object with from_email, to_emails, subject, and html_content
+- **Implementation**: Create `Mail` object with from_email, to_emails, subject (from request body), and html_content
+- **Subject**: Per-request, required field in `EmailRequest`. The legacy `EMAIL_SUBJECT` env-var fallback has been removed.
 - **CC Recipients**: Use `Cc()` objects (NOT `Email()`), TO recipients use `To()` objects
 - **Error Handling**: Let exceptions propagate to the endpoint handler; don't wrap in try-except inside helper functions
 - **Non-2xx Responses**: Raise `RuntimeError` with the SendGrid status code and response body, caught as HTTP 502 (Bad Gateway) by the route handler — surfaces the actual SendGrid error to the caller instead of a generic message
@@ -981,8 +989,54 @@ When modularizing, **all mock paths must be updated** to target the new module l
 
 ---
 
-**Last Updated**: 2026-02-19
-**Project Version**: 2.0.0
-**Test Results**: 104 passed, 0 failed
-**Test Coverage**: 94.12% (minimum: 80%)
+## Per-Request Subject + Shape-Tolerant Firestore (2026-04-16)
+
+### What changed
+- `EmailRequest` now has a required `subject: str` field with a non-empty validator (`models.py`).
+- `routes.send_email` forwards `body.subject` into `send_email_via_sendgrid(...)` (`routes.py`).
+- `send_email_via_sendgrid` now takes `subject` as a parameter; the `EMAIL_SUBJECT` env-var fallback is gone (`services/sendgrid_service.py`).
+- Firestore `_fetch_domain_list` accepts the `domains` field as **either an array or a map**, normalising maps via `list(raw.values())` (`services/firestore_service.py`).
+- Firestore client is now pinned to a non-default database id (`firestore.Client(database='default-dev')`).
+- `swagger.yaml` updated to v2.1.0: `subject` is required in `EmailRequest`, new `empty_subject` 422 example, and every endpoint ships `x-codeSamples` (curl / Python requests / JS fetch / Node axios / Go net/http).
+
+### Learnings
+
+**17. Trailing comment that swallows a comma is a silent syntax error**
+- **Bug**: `subject=subject     #os.getenv('EMAIL_SUBJECT', 'Notification'),` inside a `Mail(...)` call — the comma lives inside the comment, so the parser sees two keyword args glued together on the next line and raises `SyntaxError` at the *next* identifier.
+- **Lesson**: When commenting out an expression mid-call, either move the whole `key=value,` line into the comment or put the comment on its own line. Never leave the trailing comma embedded in the comment text.
+- **Catch**: A simple `python -m py_compile <file>` after editing catches this instantly — add it to the pre-commit loop whenever you touch call-sites.
+
+**18. Shape-tolerant readers for Firestore fields**
+- **Before**: `domains = list(domains.values())` unconditionally, which blows up with `AttributeError: 'list' object has no attribute 'values'` when the field is already a list (or missing — defaults to `[]`).
+- **After**: branch on `isinstance(raw, dict)` vs `isinstance(raw, list)` and warn + return `[]` otherwise.
+- **Lesson**: Firestore fields can drift between shapes (array ↔ map) as admins edit documents in the console. A defensive reader is cheap; a 500 on every request because the console UI "helpfully" converted your array into a map is expensive.
+- **Related**: This breaks existing test fixtures that only mock the list shape. Either update fixtures to cover both shapes, or parameterise with `@pytest.mark.parametrize("shape", ["list", "dict"])`.
+
+**19. Non-default Firestore database id**
+- **Context**: `firestore.Client()` defaults to the `(default)` database. Projects with a `default-dev` / `default-prod` split must pass `database=<id>` explicitly.
+- **Lesson**: If you pin a database id in code, lift it to an env var (`FIRESTORE_DATABASE`) so test/staging/prod can override it without a code change. Hardcoding `'default-dev'` in a service module will bite you the day you deploy to prod.
+
+**20. `subject` moved from env var → request body**
+- **Before**: `os.getenv('EMAIL_SUBJECT', 'Notification')` — every email from the service had the same subject unless you re-deployed with a new env var.
+- **After**: Required field on `EmailRequest`; validator rejects empty/whitespace-only subjects; route handler forwards it to SendGrid.
+- **Test impact**: Any payload fixture in `test_main.py` / `conftest.py` that previously omitted `subject` will now fail 422 at Pydantic validation. Fixtures must be updated to include `"subject": "..."`.
+- **Backwards-compat impact**: This is a **breaking API change** — callers that didn't send `subject` will now get `422 subject cannot be empty`. Communicate the change before deploying.
+
+**21. OpenAPI `x-codeSamples` for ready-to-run snippets**
+- **Pattern**: Add an `x-codeSamples` array under each operation, with `lang` / `label` / `source` entries. Redoc, SwaggerHub, and several API portal generators render these as a copy-paste code panel per endpoint.
+- **Keep samples runnable**: Include required headers (`X-Requestor-Email`, `Content-Type`) and the full request body — a sample that 422s on copy-paste is worse than no sample.
+- **Keep samples in the spec, not a separate doc**: Doc sites that consume the spec pick them up automatically; drift is impossible when the sample lives next to the schema it exercises.
+
+### Test / verification checklist for this change set
+- [ ] Update `conftest.py` / `test_main.py` fixtures to include `subject` in every `/send-email` payload.
+- [ ] Add parametrised tests covering `domains` as a list AND as a dict in Firestore.
+- [ ] Add a test for `subject` validator (empty string / whitespace-only → 422).
+- [ ] Either revert the hardcoded `database='default-dev'` or add a test asserting the id read from env.
+- [ ] Re-run `pytest --cov=.` and update coverage numbers below.
+
+---
+
+**Last Updated**: 2026-04-16
+**Project Version**: 2.1.0
 **Docker Image Size**: 212MB (optimized from 428MB via multi-stage build)
+**Known pending work**: test suite needs `subject` added to fixtures; Firestore dict-shape tests pending.

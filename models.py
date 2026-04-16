@@ -24,6 +24,7 @@ class EmailRequest(BaseModel):
     to_list: List[str]
     cc_list: Optional[List[str]] = None
     mail_body: str
+    subject: str
 
     @field_validator('to_list')
     @classmethod
@@ -53,4 +54,11 @@ class EmailRequest(BaseModel):
     def validate_mail_body(cls, v):
         if not v or not v.strip():
             raise ValueError('mail_body cannot be empty')
+        return v
+
+    @field_validator('subject')
+    @classmethod
+    def validate_subject(cls, v):
+        if not v or not v.strip():
+            raise ValueError('subject cannot be empty')
         return v

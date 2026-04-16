@@ -40,7 +40,7 @@ def get_sendgrid_api_key() -> str:
         raise RuntimeError("Failed to fetch SendGrid API key from Secret Manager") from e
 
 
-def send_email_via_sendgrid(to_list: List[str], cc_list: List[str], mail_body: str) -> dict:
+def send_email_via_sendgrid(to_list: List[str], cc_list: List[str], subject: str, mail_body: str) -> dict:
     """
     Send email using SendGrid API.
     Raises ValueError for config issues, Exception for SendGrid failures.
@@ -55,7 +55,7 @@ def send_email_via_sendgrid(to_list: List[str], cc_list: List[str], mail_body: s
     message = Mail(
         from_email=from_email,
         to_emails=[To(email) for email in to_list],
-        subject=os.getenv('EMAIL_SUBJECT', 'Notification'),
+        subject=subject,
         html_content=mail_body
     )
 
