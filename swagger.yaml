@@ -12,9 +12,27 @@ info:
     - Requestor identity tracking via `X-Requestor-Email` header
 
     **Code samples**: Each endpoint below includes ready-to-run `x-codeSamples`
-    for `curl`, `python` (requests) and `javascript` (fetch). In Redoc / Swagger
-    UI variants that honour the `x-codeSamples` vendor extension, these appear
-    as a copy-paste code panel next to the endpoint.
+    for `curl`, `python` (requests), `javascript` (fetch), `node` (axios) and
+    `go` (net/http). In Redoc / Swagger UI variants that honour the
+    `x-codeSamples` vendor extension, these appear as a copy-paste code panel
+    next to the endpoint.
+
+    **Cloud Run authentication**: When the service is deployed without
+    `--allow-unauthenticated`, every request must carry a Google-signed OIDC
+    ID token in `Authorization: Bearer <token>`, where the token's
+    **audience** equals the Cloud Run service URL. The samples below show the
+    recommended way to mint that token per language:
+
+    | Environment | OIDC source |
+    |---|---|
+    | Developer shell | `gcloud auth print-identity-token` |
+    | Another GCP workload | Metadata server — `GET http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=<URL>` with header `Metadata-Flavor: Google` |
+    | Python | `google.oauth2.id_token.fetch_id_token(Request(), audience)` |
+    | Node / JS | `google-auth-library` → `auth.getIdTokenClient(audience)` |
+    | Go | `idtoken.NewTokenSource(ctx, audience)` (from `google.golang.org/api/idtoken`) |
+
+    Set `GOOGLE_APPLICATION_CREDENTIALS` (or run on GCP) so the client library
+    can find the caller's service-account credentials automatically.
   version: 2.1.0
   contact:
     name: API Support
@@ -49,20 +67,41 @@ paths:
                 service: Email Sending API
       x-codeSamples:
         - lang: curl
-          label: cURL
+          label: cURL + OIDC
           source: |
-            curl -X GET "https://your-service-url/"
+            # Mint an ID token whose audience is the Cloud Run service URL
+            SERVICE_URL="https://your-service-url"
+            TOKEN=$(gcloud auth print-identity-token \
+              --audiences="$SERVICE_URL")
+
+            curl -X GET "$SERVICE_URL/" \
+              -H "Authorization: Bearer $TOKEN"
         - lang: python
-          label: Python (requests)
+          label: Python (requests + google-auth)
           source: |
+            import google.auth.transport.requests
+            import google.oauth2.id_token
             import requests
-            r = requests.get("https://your-service-url/")
+
+            SERVICE_URL = "https://your-service-url"
+            auth_req = google.auth.transport.requests.Request()
+            token = google.oauth2.id_token.fetch_id_token(auth_req, SERVICE_URL)
+
+            r = requests.get(f"{SERVICE_URL}/",
+                             headers={"Authorization": f"Bearer {token}"},
+                             timeout=30)
             print(r.status_code, r.json())
         - lang: javascript
-          label: JavaScript (fetch)
+          label: Node.js (google-auth-library)
           source: |
-            const res = await fetch("https://your-service-url/");
-            console.log(res.status, await res.json());
+            import {GoogleAuth} from "google-auth-library";
+
+            const SERVICE_URL = "https://your-service-url";
+            const auth = new GoogleAuth();
+            const client = await auth.getIdTokenClient(SERVICE_URL);
+
+            const res = await client.request({url: `${SERVICE_URL}/`});
+            console.log(res.status, res.data);
 
   /health:
     get:
@@ -82,21 +121,39 @@ paths:
                 status: healthy
       x-codeSamples:
         - lang: curl
-          label: cURL
+          label: cURL + OIDC
           source: |
-            curl -X GET "https://your-service-url/health"
+            SERVICE_URL="https://your-service-url"
+            TOKEN=$(gcloud auth print-identity-token \
+              --audiences="$SERVICE_URL")
+
+            curl -X GET "$SERVICE_URL/health" \
+              -H "Authorization: Bearer $TOKEN"
         - lang: python
-          label: Python (requests)
+          label: Python (requests + google-auth)
           source: |
+            import google.auth.transport.requests
+            import google.oauth2.id_token
             import requests
-            r = requests.get("https://your-service-url/health")
+
+            SERVICE_URL = "https://your-service-url"
+            auth_req = google.auth.transport.requests.Request()
+            token = google.oauth2.id_token.fetch_id_token(auth_req, SERVICE_URL)
+
+            r = requests.get(f"{SERVICE_URL}/health",
+                             headers={"Authorization": f"Bearer {token}"},
+                             timeout=30)
             r.raise_for_status()
             print(r.json())
         - lang: javascript
-          label: JavaScript (fetch)
+          label: Node.js (google-auth-library)
           source: |
-            const res = await fetch("https://your-service-url/health");
-            console.log(await res.json());
+            import {GoogleAuth} from "google-auth-library";
+
+            const SERVICE_URL = "https://your-service-url";
+            const client = await new GoogleAuth().getIdTokenClient(SERVICE_URL);
+            const res = await client.request({url: `${SERVICE_URL}/health`});
+            console.log(res.data);
 
   /send-email:
     post:
@@ -238,9 +295,17 @@ paths:
                 detail: An unexpected error occurred while sending the email
       x-codeSamples:
         - lang: curl
-          label: cURL
+          label: cURL + OIDC (gcloud)
           source: |
-            curl -X POST "https://your-service-url/send-email" \
+            # 1. Mint a Google-signed ID token whose audience is the
+            #    Cloud Run service URL.
+            SERVICE_URL="https://your-service-url"
+            TOKEN=$(gcloud auth print-identity-token \
+              --audiences="$SERVICE_URL")
+
+            # 2. Call the service with the token.
+            curl -X POST "$SERVICE_URL/send-email" \
+              -H "Authorization: Bearer $TOKEN" \
               -H "Content-Type: application/json" \
               -H "X-Requestor-Email: requestor@example.com" \
               -d '{
@@ -249,13 +314,41 @@ paths:
                 "subject": "Hello from Cloud Run",
                 "mail_body": "<p>Hello from the Email API.</p>"
               }'
-        - lang: python
-          label: Python (requests)
+        - lang: shell
+          label: cURL + OIDC (metadata server, from another GCP workload)
           source: |
+            # Use this variant when the caller is itself running on GCP
+            # (Cloud Run, GCE, GKE, Cloud Build, etc.). The VM's metadata
+            # server mints an ID token for the attached service account.
+            SERVICE_URL="https://your-service-url"
+            TOKEN=$(curl -s -H "Metadata-Flavor: Google" \
+              "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${SERVICE_URL}")
+
+            curl -X POST "$SERVICE_URL/send-email" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/json" \
+              -H "X-Requestor-Email: requestor@example.com" \
+              -d '{
+                "to_list": ["recipient@example.com"],
+                "subject": "Hello from Cloud Run",
+                "mail_body": "<p>Sent from another GCP workload.</p>"
+              }'
+        - lang: python
+          label: Python (requests + google-auth)
+          source: |
+            # pip install requests google-auth
+            import google.auth.transport.requests
+            import google.oauth2.id_token
             import requests
 
-            url = "https://your-service-url/send-email"
+            SERVICE_URL = "https://your-service-url"
+
+            # Mint an OIDC token with the service URL as audience.
+            auth_req = google.auth.transport.requests.Request()
+            token = google.oauth2.id_token.fetch_id_token(auth_req, SERVICE_URL)
+
             headers = {
+                "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
                 "X-Requestor-Email": "requestor@example.com",
             }
@@ -266,15 +359,24 @@ paths:
                 "mail_body": "<p>Hello from the Email API.</p>",
             }
 
-            resp = requests.post(url, json=payload, headers=headers, timeout=30)
+            resp = requests.post(f"{SERVICE_URL}/send-email",
+                                 json=payload, headers=headers, timeout=30)
             resp.raise_for_status()
             print(resp.json())
         - lang: javascript
-          label: JavaScript (fetch)
+          label: JavaScript (fetch + gcloud-minted token)
           source: |
-            const res = await fetch("https://your-service-url/send-email", {
+            // Works in the browser / service-worker / Cloudflare Worker.
+            // You need to obtain the OIDC token out-of-band — e.g., from a
+            // backend you control, or `gcloud auth print-identity-token
+            // --audiences=<SERVICE_URL>` during development.
+            const SERVICE_URL = "https://your-service-url";
+            const token = process.env.OIDC_TOKEN; // minted elsewhere
+
+            const res = await fetch(`${SERVICE_URL}/send-email`, {
               method: "POST",
               headers: {
+                "Authorization": `Bearer ${token}`,
                 "Content-Type": "application/json",
                 "X-Requestor-Email": "requestor@example.com",
               },
@@ -288,56 +390,72 @@ paths:
             if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
             console.log(await res.json());
         - lang: node
-          label: Node.js (axios)
+          label: Node.js (google-auth-library — auto OIDC)
           source: |
-            const axios = require("axios");
+            // npm i google-auth-library
+            // getIdTokenClient returns an HTTP client that attaches a
+            // freshly-minted ID token (audience = SERVICE_URL) on every
+            // request.
+            import {GoogleAuth} from "google-auth-library";
 
-            (async () => {
-              const { data } = await axios.post(
-                "https://your-service-url/send-email",
-                {
-                  to_list: ["recipient@example.com"],
-                  cc_list: ["cc@example.com"],
-                  subject: "Hello from Cloud Run",
-                  mail_body: "<p>Hello from the Email API.</p>",
-                },
-                {
-                  headers: {
-                    "Content-Type": "application/json",
-                    "X-Requestor-Email": "requestor@example.com",
-                  },
-                  timeout: 30000,
-                }
-              );
-              console.log(data);
-            })();
+            const SERVICE_URL = "https://your-service-url";
+            const auth = new GoogleAuth();
+            const client = await auth.getIdTokenClient(SERVICE_URL);
+
+            const res = await client.request({
+              url: `${SERVICE_URL}/send-email`,
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Requestor-Email": "requestor@example.com",
+              },
+              data: {
+                to_list: ["recipient@example.com"],
+                cc_list: ["cc@example.com"],
+                subject: "Hello from Cloud Run",
+                mail_body: "<p>Hello from the Email API.</p>",
+              },
+            });
+            console.log(res.status, res.data);
         - lang: go
-          label: Go (net/http)
+          label: Go (google.golang.org/api/idtoken)
           source: |
+            // go get google.golang.org/api/idtoken
             package main
 
             import (
               "bytes"
+              "context"
               "encoding/json"
               "fmt"
               "io"
               "net/http"
+
+              "google.golang.org/api/idtoken"
             )
 
             func main() {
+              ctx := context.Background()
+              serviceURL := "https://your-service-url"
+
+              // Returns an *http.Client that auto-injects an OIDC token
+              // whose audience == serviceURL on every request.
+              client, err := idtoken.NewClient(ctx, serviceURL)
+              if err != nil { panic(err) }
+
               body, _ := json.Marshal(map[string]any{
                 "to_list":   []string{"recipient@example.com"},
                 "cc_list":   []string{"cc@example.com"},
                 "subject":   "Hello from Cloud Run",
                 "mail_body": "<p>Hello from the Email API.</p>",
               })
-              req, _ := http.NewRequest("POST",
-                "https://your-service-url/send-email",
-                bytes.NewBuffer(body))
+
+              req, _ := http.NewRequestWithContext(ctx, "POST",
+                serviceURL+"/send-email", bytes.NewBuffer(body))
               req.Header.Set("Content-Type", "application/json")
               req.Header.Set("X-Requestor-Email", "requestor@example.com")
 
-              resp, err := http.DefaultClient.Do(req)
+              resp, err := client.Do(req)
               if err != nil { panic(err) }
               defer resp.Body.Close()
               out, _ := io.ReadAll(resp.Body)
