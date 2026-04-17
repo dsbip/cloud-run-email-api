@@ -1432,5 +1432,70 @@ class TestBQAuditLoggerUnit:
             real_log_audit("r", "1.1.1.1", ["a@b.com"], [], "failure", 500, "err")
 
 
+class TestCcDeduplication:
+    """Addresses present in both to_list and cc_list should be kept only in TO."""
+
+    _base_payload = {
+        "subject": "Hello",
+        "mail_body": "<p>Test</p>",
+    }
+
+    def _make(self, to_list, cc_list):
+        from models import EmailRequest
+        return EmailRequest(to_list=to_list, cc_list=cc_list, **self._base_payload)
+
+    def test_common_email_removed_from_cc(self):
+        req = self._make(
+            to_list=["alice@example.com", "bob@example.com"],
+            cc_list=["alice@example.com", "carol@example.com"],
+        )
+        assert req.to_list == ["alice@example.com", "bob@example.com"]
+        assert req.cc_list == ["carol@example.com"]
+
+    def test_multiple_common_emails_removed(self):
+        req = self._make(
+            to_list=["alice@example.com", "bob@example.com"],
+            cc_list=["alice@example.com", "bob@example.com", "dave@example.com"],
+        )
+        assert req.cc_list == ["dave@example.com"]
+
+    def test_case_insensitive_match(self):
+        # Different casing still counts as the same address.
+        req = self._make(
+            to_list=["Alice@Example.com"],
+            cc_list=["alice@example.com", "carol@example.com"],
+        )
+        assert req.cc_list == ["carol@example.com"]
+
+    def test_no_overlap_leaves_cc_unchanged(self):
+        req = self._make(
+            to_list=["alice@example.com"],
+            cc_list=["carol@example.com", "dave@example.com"],
+        )
+        assert req.cc_list == ["carol@example.com", "dave@example.com"]
+
+    def test_cc_empties_when_fully_overlapping(self):
+        req = self._make(
+            to_list=["alice@example.com", "bob@example.com"],
+            cc_list=["alice@example.com", "bob@example.com"],
+        )
+        assert req.cc_list == []
+
+    def test_cc_none_is_unchanged(self):
+        # cc_list is optional; None must stay None (no crash, no mutation).
+        req = self._make(
+            to_list=["alice@example.com"],
+            cc_list=None,
+        )
+        assert req.cc_list is None
+
+    def test_cc_order_is_preserved_after_dedupe(self):
+        req = self._make(
+            to_list=["alice@example.com"],
+            cc_list=["carol@example.com", "alice@example.com", "dave@example.com"],
+        )
+        assert req.cc_list == ["carol@example.com", "dave@example.com"]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])

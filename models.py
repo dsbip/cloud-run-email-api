@@ -1,7 +1,7 @@
 import re
 import os
 from typing import List, Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 # Maximum recipients per request (SendGrid limit is 1000 per API call)
 MAX_RECIPIENTS = int(os.getenv("MAX_RECIPIENTS", "500"))
@@ -62,3 +62,17 @@ class EmailRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError('subject cannot be empty')
         return v
+
+    @model_validator(mode='after')
+    def dedupe_cc_against_to(self):
+        """Remove any CC addresses that also appear in to_list.
+
+        If the same recipient is in both TO and CC, keep it only in TO.
+        Comparison is case-insensitive (emails are case-insensitive by
+        convention); original CC ordering is preserved for the rest.
+        """
+        if self.cc_list:
+            to_set = {email.lower() for email in self.to_list}
+            self.cc_list = [email for email in self.cc_list
+                            if email.lower() not in to_set]
+        return self
