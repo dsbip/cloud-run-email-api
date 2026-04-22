@@ -1,7 +1,7 @@
 import re
 import os
 from typing import List, Optional
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 # Maximum recipients per request (SendGrid limit is 1000 per API call)
 MAX_RECIPIENTS = int(os.getenv("MAX_RECIPIENTS", "500"))
@@ -21,6 +21,8 @@ EMAIL_REGEX = re.compile(
 
 
 class EmailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     to_list: List[str]
     cc_list: Optional[List[str]] = None
     mail_body: str

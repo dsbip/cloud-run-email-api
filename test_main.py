@@ -795,21 +795,21 @@ class TestEdgeCases:
 
         assert response.status_code == 200
 
-    def test_extra_fields_ignored(self, client, mock_firestore, mock_sendgrid):
-        """Test that extra/unknown fields in request body are ignored."""
-        _setup_firestore_mock(mock_firestore)
-        _setup_sendgrid_mock(mock_sendgrid)
-
+    def test_extra_fields_rejected(self, client):
+        """Test that extra/unknown fields in request body are rejected."""
         payload = {
             "to_list": ["user@example.com"],
             "subject": "Test Email",
             "mail_body": "<p>Test</p>",
-            "unknown_field": "should be ignored",
+            "unknown_field": "should be rejected",
             "priority": 1
         }
         response = client.post("/send-email", json=payload)
-
-        assert response.status_code == 200
+        assert response.status_code == 422
+        errors = response.json()["detail"]
+        extra_fields = [e["loc"][-1] for e in errors if e["type"] == "extra_forbidden"]
+        assert "unknown_field" in extra_fields
+        assert "priority" in extra_fields
 
     def test_cc_list_empty_list(self, client, mock_firestore, mock_sendgrid):
         """Test cc_list as empty list (explicit [])."""
@@ -1667,6 +1667,77 @@ class TestValidationErrorBQAudit:
             body = response.json()
             bq_request_id = mock_app_audit.call_args[1]["request_id"]
             assert body["request_id"] == bq_request_id
+
+    def test_extra_field_validation_logs_to_bq(self, client, monkeypatch):
+        """Sending an unknown field (extra=forbid) should also be logged to BQ."""
+        monkeypatch.setenv("BQ_AUDIT_ENABLED", "true")
+
+        with patch('app.log_audit') as mock_app_audit:
+            payload = {
+                "to_list": ["a@b.com"],
+                "subject": "X",
+                "mail_body": "<p>Y</p>",
+                "bogus_field": "oops"
+            }
+            response = client.post("/send-email", json=payload)
+
+            assert response.status_code == 422
+            mock_app_audit.assert_called_once()
+            assert mock_app_audit.call_args[0][5] == 422
+
+    def test_validation_error_bq_write_end_to_end(self, client, monkeypatch):
+        """Verify that the real log_audit writes a BQ row (mock only the BQ client)."""
+        monkeypatch.setenv("BQ_AUDIT_ENABLED", "true")
+        monkeypatch.setenv("BQ_PROJECT_ID", "test-proj")
+
+        with patch('utilities.bq_audit_logger._get_bq_client') as mock_get:
+            mock_bq = MagicMock()
+            mock_bq.insert_rows_json.return_value = []
+            mock_get.return_value = mock_bq
+
+            payload = {"to_list": ["a@b.com"], "mail_body": "<p>X</p>"}
+            response = client.post("/send-email", json=payload)
+
+            assert response.status_code == 422
+            mock_bq.insert_rows_json.assert_called_once()
+            row = mock_bq.insert_rows_json.call_args[0][1][0]
+            assert row["status"] == "failure"
+            assert row["status_code"] == 422
+            assert row["request_id"] == response.json()["request_id"]
+            assert "Field required" in row["error_detail"]
+
+
+class TestExtraFieldRejection:
+    """extra=forbid on EmailRequest catches misspelled field names."""
+
+    def test_email_body_typo_rejected_with_clear_error(self, client):
+        """Sending 'email_body' instead of 'mail_body' must produce a clear error."""
+        payload = {
+            "to_list": ["user@example.com"],
+            "subject": "Test",
+            "email_body": "<p>Hello</p>"
+        }
+        response = client.post("/send-email", json=payload)
+        assert response.status_code == 422
+
+        errors = response.json()["detail"]
+        types = {e["type"] for e in errors}
+        assert "extra_forbidden" in types
+        extra_locs = [e["loc"][-1] for e in errors if e["type"] == "extra_forbidden"]
+        assert "email_body" in extra_locs
+
+    def test_correct_field_name_only_missing_subject_error(self, client):
+        """Correct mail_body with missing subject produces only one error."""
+        payload = {
+            "to_list": ["user@example.com"],
+            "mail_body": "<p>Hello</p>"
+        }
+        response = client.post("/send-email", json=payload)
+        assert response.status_code == 422
+
+        errors = response.json()["detail"]
+        assert len(errors) == 1
+        assert errors[0]["loc"] == ["body", "subject"]
 
 
 class TestBQAuditRequestId:
