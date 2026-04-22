@@ -1393,7 +1393,7 @@ class TestBQAuditLogging:
         assert call_args[0][5] == 422
 
     def test_requestor_header_extracted(self, client, mock_firestore, mock_sendgrid, mock_bq_audit, monkeypatch):
-        """Test that X-Requestor-Email header is passed to log_audit."""
+        """Test that x-requestor-system header is passed to log_audit."""
         monkeypatch.setenv("BQ_AUDIT_ENABLED", "true")
         _setup_firestore_mock(mock_firestore)
         _setup_sendgrid_mock(mock_sendgrid)
@@ -1406,7 +1406,7 @@ class TestBQAuditLogging:
         response = client.post(
             "/send-email",
             json=payload,
-            headers={"X-Requestor-Email": "admin@corp.com"}
+            headers={"x-requestor-system": "admin@corp.com"}
         )
 
         assert response.status_code == 200
@@ -1414,7 +1414,7 @@ class TestBQAuditLogging:
         assert call_args[0][0] == "admin@corp.com"  # requestor
 
     def test_requestor_defaults_to_unknown(self, client, mock_firestore, mock_sendgrid, mock_bq_audit, monkeypatch):
-        """Test that missing X-Requestor-Email defaults to 'unknown'."""
+        """Test that missing x-requestor-system defaults to 'unknown'."""
         monkeypatch.setenv("BQ_AUDIT_ENABLED", "true")
         _setup_firestore_mock(mock_firestore)
         _setup_sendgrid_mock(mock_sendgrid)
@@ -1624,9 +1624,9 @@ class TestRequestId:
         _setup_sendgrid_mock(mock_sendgrid)
 
         response = client.post("/send-email", json=self._valid_payload)
-        assert "X-Request-ID" in response.headers
-        assert self._is_uuid4(response.headers["X-Request-ID"])
-        assert response.json()["request_id"] == response.headers["X-Request-ID"]
+        assert "x-request-id" in response.headers
+        assert self._is_uuid4(response.headers["x-request-id"])
+        assert response.json()["request_id"] == response.headers["x-request-id"]
 
 
 class TestValidationErrorBQAudit:

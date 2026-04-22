@@ -220,7 +220,7 @@ Test the API using curl:
 ```bash
 curl -X POST "https://your-cloud-run-url/send-email" \
   -H "Content-Type: application/json" \
-  -H "X-Requestor-Email: requestor@example.com" \
+  -H "x-requestor-system: my-service" \
   -d '{
     "to_list": ["recipient@example.com"],
     "cc_list": ["cc@example.com"],

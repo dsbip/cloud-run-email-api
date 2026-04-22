@@ -35,7 +35,7 @@ def send_email(request: Request, body: EmailRequest):
     and sends email via SendGrid.
     """
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
-    requestor = request.headers.get("X-Requestor-Email", "unknown")
+    requestor = request.headers.get("x-requestor-system", "unknown")
     client_ip = request.client.host if request.client else "unknown"
     to_list = body.to_list
     cc_list = body.cc_list or []

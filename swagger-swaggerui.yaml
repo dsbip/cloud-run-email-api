@@ -145,20 +145,19 @@ paths:
         is required in `Authorization: Bearer`. Click **Authorize** at the
         top of this page to attach it to the try-it-out form.
 
-        **Audit header:** pass `X-Requestor-Email` to attribute the send
+        **Audit header:** pass `x-requestor-system` to attribute the send
         to a human or system. Omitting it logs `"unknown"` to BigQuery.
       operationId: sendEmail
       tags:
         - Email
       parameters:
-        - name: X-Requestor-Email
+        - name: x-requestor-system
           in: header
           required: false
-          description: Email address of the caller for audit logging. Defaults to `"unknown"`.
+          description: Identifier of the calling system or application for audit logging. Defaults to `"unknown"`.
           schema:
             type: string
-            format: email
-            example: requestor@example.com
+            example: billing-service
       requestBody:
         required: true
         content:

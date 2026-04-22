@@ -9,7 +9,7 @@ info:
     - Domain blocking and allowlisting via Firestore
     - Email delivery via SendGrid with per-request subject
     - BigQuery audit logging for every request
-    - Requestor identity tracking via `X-Requestor-Email` header
+    - Requestor identity tracking via `x-requestor-system` header
 
     **Code samples**: Each endpoint below includes ready-to-run `x-codeSamples`
     for `curl`, `python` (requests), `javascript` (fetch), `node` (axios) and
@@ -179,14 +179,13 @@ paths:
       tags:
         - Email
       parameters:
-        - name: X-Requestor-Email
+        - name: x-requestor-system
           in: header
           required: false
-          description: Email address of the person or system making the request. Used for audit logging. Defaults to `"unknown"` if not provided.
+          description: Identifier of the calling system or application. Used for audit logging. Defaults to `"unknown"` if not provided.
           schema:
             type: string
-            format: email
-            example: requestor@example.com
+            example: billing-service
       requestBody:
         required: true
         content:
@@ -307,7 +306,7 @@ paths:
             curl -X POST "$SERVICE_URL/send-email" \
               -H "Authorization: Bearer $TOKEN" \
               -H "Content-Type: application/json" \
-              -H "X-Requestor-Email: requestor@example.com" \
+              -H "x-requestor-system: billing-service" \
               -d '{
                 "to_list": ["recipient@example.com"],
                 "cc_list": ["cc@example.com"],
@@ -327,7 +326,7 @@ paths:
             curl -X POST "$SERVICE_URL/send-email" \
               -H "Authorization: Bearer $TOKEN" \
               -H "Content-Type: application/json" \
-              -H "X-Requestor-Email: requestor@example.com" \
+              -H "x-requestor-system: billing-service" \
               -d '{
                 "to_list": ["recipient@example.com"],
                 "subject": "Hello from Cloud Run",
@@ -350,7 +349,7 @@ paths:
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
-                "X-Requestor-Email": "requestor@example.com",
+                "x-requestor-system": "billing-service",
             }
             payload = {
                 "to_list": ["recipient@example.com"],
@@ -378,7 +377,7 @@ paths:
               headers: {
                 "Authorization": `Bearer ${token}`,
                 "Content-Type": "application/json",
-                "X-Requestor-Email": "requestor@example.com",
+                "x-requestor-system": "billing-service",
               },
               body: JSON.stringify({
                 to_list: ["recipient@example.com"],
@@ -407,7 +406,7 @@ paths:
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "X-Requestor-Email": "requestor@example.com",
+                "x-requestor-system": "billing-service",
               },
               data: {
                 to_list: ["recipient@example.com"],
@@ -453,7 +452,7 @@ paths:
               req, _ := http.NewRequestWithContext(ctx, "POST",
                 serviceURL+"/send-email", bytes.NewBuffer(body))
               req.Header.Set("Content-Type", "application/json")
-              req.Header.Set("X-Requestor-Email", "requestor@example.com")
+              req.Header.Set("x-requestor-system", "requestor@example.com")
 
               resp, err := client.Do(req)
               if err != nil { panic(err) }

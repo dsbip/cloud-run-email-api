@@ -60,9 +60,10 @@ What our service adds on top:
 - **Domain policy** — a Firestore-backed blocklist and allowlist let us
   block known-bad domains or enforce "only send to `@example.com`"
   without modifying SendGrid configuration.
-- **Caller attribution** — every request carries an `X-Requestor-Email`
-  header that identifies the upstream system, independent of the
-  service-account used to invoke the service.
+- **Caller attribution** — every request carries an `x-requestor-system`
+  header that identifies the upstream application or service (e.g.,
+  `billing-service`, `crm-app`), independent of the service-account
+  used to invoke the service.
 - **Verified sender** — callers do not choose the `from` address; the
   service enforces a single verified sender, so deliverability is never
   put at risk by a caller misconfiguration.
@@ -125,8 +126,8 @@ To start using the service, reach out to the support team at
 3. **Expected volume** (messages/day, peak burst).
 4. **Recipient domains** you intend to send to — needed if the
    allowlist is enforced in your target environment.
-5. **Requestor identifier** you'll pass in the `X-Requestor-Email`
-   header (usually a role-based mailbox like `my-app-alerts@example.com`).
+5. **Requestor identifier** you'll pass in the `x-requestor-system`
+   header (e.g., `billing-service`, `crm-notifications`).
 
 The support team will:
 
@@ -151,7 +152,7 @@ TOKEN=$(gcloud auth print-identity-token --audiences="$SERVICE_URL")
 curl -X POST "$SERVICE_URL/send-email" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -H "X-Requestor-Email: my-app-alerts@example.com" \
+  -H "x-requestor-system: my-billing-service" \
   -d '{
     "to_list": ["recipient@example.com"],
     "subject": "Hello from the Email API",
@@ -202,7 +203,7 @@ described in the Deployment Guide page.)
 - **What to include in a support request:**
   - Environment (dev or prod)
   - Timestamp of the failing request (UTC)
-  - Requestor identifier sent in `X-Requestor-Email`
+  - Requestor system identifier sent in `x-requestor-system`
   - HTTP status and response body you received
   - For 500/502 errors: a correlation ID from your own logs if
     available — the support team can cross-reference it against

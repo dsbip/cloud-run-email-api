@@ -21,14 +21,14 @@ def create_app() -> FastAPI:
         """Attach a unique request_id to every incoming request."""
         request.state.request_id = str(uuid.uuid4())
         response = await call_next(request)
-        response.headers["X-Request-ID"] = request.state.request_id
+        response.headers["x-request-id"] = request.state.request_id
         return response
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         """Log Pydantic validation errors with full details and audit to BQ."""
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
-        requestor = request.headers.get("X-Requestor-Email", "unknown")
+        requestor = request.headers.get("x-requestor-system", "unknown")
         client_ip = request.client.host if request.client else "unknown"
 
         errors = exc.errors()
@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
     async def unhandled_exception_handler(request: Request, exc: Exception):
         """Catch-all for unhandled exceptions - log full traceback and audit to BQ."""
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
-        requestor = request.headers.get("X-Requestor-Email", "unknown")
+        requestor = request.headers.get("x-requestor-system", "unknown")
         client_ip = request.client.host if request.client else "unknown"
 
         logger.critical(
