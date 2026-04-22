@@ -1,4 +1,5 @@
 import logging
+import uuid
 from fastapi import APIRouter, HTTPException, Request, status
 from models import EmailRequest
 from services.firestore_service import (
@@ -33,6 +34,7 @@ def send_email(request: Request, body: EmailRequest):
     Validates email addresses, checks against blocked domains,
     and sends email via SendGrid.
     """
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
     requestor = request.headers.get("X-Requestor-Email", "unknown")
     client_ip = request.client.host if request.client else "unknown"
     to_list = body.to_list
@@ -75,31 +77,32 @@ def send_email(request: Request, body: EmailRequest):
 
         # Step 5: Audit log on success
         log_audit(requestor, client_ip, to_list, cc_list,
-                  "success", 200, "")
+                  "success", 200, "", request_id=request_id)
 
+        result["request_id"] = request_id
         return result
 
     except HTTPException as he:
         log_audit(requestor, client_ip, to_list, cc_list,
-                  "failure", he.status_code, he.detail)
+                  "failure", he.status_code, he.detail, request_id=request_id)
         raise
     except ValueError as ve:
         log_audit(requestor, client_ip, to_list, cc_list,
-                  "failure", 422, str(ve))
+                  "failure", 422, str(ve), request_id=request_id)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(ve)
         ) from ve
     except RuntimeError as re:
         log_audit(requestor, client_ip, to_list, cc_list,
-                  "failure", 502, str(re))
+                  "failure", 502, str(re), request_id=request_id)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(re)
         ) from re
     except Exception as e:
         log_audit(requestor, client_ip, to_list, cc_list,
-                  "failure", 500, str(e))
+                  "failure", 500, str(e), request_id=request_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred while sending the email"

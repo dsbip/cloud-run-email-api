@@ -33,5 +33,6 @@ def sample_email_payload():
     return {
         "to_list": ["recipient@example.com"],
         "cc_list": ["cc@example.com"],
+        "subject": "Test Email",
         "mail_body": "<h1>Test Email</h1><p>This is a test email body.</p>"
     }

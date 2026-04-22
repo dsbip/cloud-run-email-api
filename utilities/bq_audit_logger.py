@@ -39,6 +39,7 @@ def log_audit(
     status: str,
     status_code: int,
     error_detail: str,
+    request_id: str = "",
 ) -> None:
     """
     Insert an audit log row into BigQuery.
@@ -58,6 +59,7 @@ def log_audit(
 
         row = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_id": request_id,
             "requestor": requestor,
             "client_ip": client_ip,
             "to_list": to_list,

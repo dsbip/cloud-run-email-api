@@ -118,6 +118,7 @@ class TestEmailValidation:
         payload = {
             "to_list": ["test@example.com", "user@domain.org"],
             "cc_list": ["cc@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -128,6 +129,7 @@ class TestEmailValidation:
         payload = {
             "to_list": ["invalid-email", "test@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -139,6 +141,7 @@ class TestEmailValidation:
         payload = {
             "to_list": ["test@example.com"],
             "cc_list": ["not-an-email"],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -150,6 +153,7 @@ class TestEmailValidation:
         payload = {
             "to_list": [],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -161,6 +165,7 @@ class TestEmailValidation:
         payload = {
             "to_list": ["test@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": ""
         }
         response = client.post("/send-email", json=payload)
@@ -171,6 +176,7 @@ class TestEmailValidation:
         payload = {
             "to_list": ["test@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "   \n\t  "
         }
         response = client.post("/send-email", json=payload)
@@ -198,6 +204,7 @@ class TestEmailValidation:
 
         payload = {
             "to_list": ["test@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -287,6 +294,7 @@ class TestBlockedDomains:
         payload = {
             "to_list": ["user@blocked.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -300,6 +308,7 @@ class TestBlockedDomains:
         payload = {
             "to_list": ["valid@example.com"],
             "cc_list": ["user@spam.org"],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -399,6 +408,7 @@ class TestAllowedDomains:
         payload = {
             "to_list": ["user@external.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -412,6 +422,7 @@ class TestAllowedDomains:
         payload = {
             "to_list": ["user@corp.com"],
             "cc_list": ["external@other.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -426,6 +437,7 @@ class TestAllowedDomains:
         payload = {
             "to_list": ["user@example.com"],
             "cc_list": ["admin@corp.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -439,6 +451,7 @@ class TestAllowedDomains:
         payload = {
             "to_list": ["anyone@anywhere.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -457,6 +470,7 @@ class TestAllowedDomains:
         payload = {
             "to_list": ["user@evil.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -503,6 +517,7 @@ class TestSendGridIntegration:
         payload = {
             "to_list": ["recipient@example.com"],
             "cc_list": ["cc@example.com"],
+            "subject": "Test Email",
             "mail_body": "<h1>Test</h1><p>Email body</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -526,6 +541,7 @@ class TestSendGridIntegration:
         payload = {
             "to_list": ["recipient@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -542,6 +558,7 @@ class TestSendGridIntegration:
         payload = {
             "to_list": ["recipient@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -573,6 +590,7 @@ class TestHTMLEmailSupport:
         payload = {
             "to_list": ["recipient@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": html_body
         }
         response = client.post("/send-email", json=payload)
@@ -590,6 +608,7 @@ class TestHTMLEmailSupport:
         payload = {
             "to_list": ["recipient@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": multiline_body
         }
         response = client.post("/send-email", json=payload)
@@ -607,6 +626,7 @@ class TestErrorHandling:
         payload = {
             "to_list": ["recipient@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -626,6 +646,7 @@ class TestErrorHandling:
                 "user3@domain.org"
             ],
             "cc_list": ["cc1@example.com", "cc2@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test email to multiple recipients</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -640,6 +661,7 @@ class TestErrorHandling:
         payload = {
             "to_list": ["user.name+tag@example.com", "first_last@domain.co.uk"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -678,6 +700,7 @@ class TestEdgeCases:
         payload = {
             "to_list": ["recipient@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": long_body
         }
         response = client.post("/send-email", json=payload)
@@ -692,6 +715,7 @@ class TestEdgeCases:
         payload = {
             "to_list": ["recipient@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Hello world! Привет мир!</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -706,6 +730,7 @@ class TestEdgeCases:
         payload = {
             "to_list": ["recipient@anydomain.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test email</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -719,6 +744,7 @@ class TestEdgeCases:
 
         payload = {
             "to_list": ["only@example.com"],
+            "subject": "Test Email",
             "mail_body": "plain text body"
         }
         response = client.post("/send-email", json=payload)
@@ -733,6 +759,7 @@ class TestEdgeCases:
         payload = {
             "to_list": ["test@example.com"],
             "cc_list": None,
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -746,6 +773,7 @@ class TestEdgeCases:
 
         payload = {
             "to_list": ["user@example.com", "user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -760,6 +788,7 @@ class TestEdgeCases:
         payload = {
             "to_list": ["user@example.com"],
             "cc_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -773,6 +802,7 @@ class TestEdgeCases:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>",
             "unknown_field": "should be ignored",
             "priority": 1
@@ -789,6 +819,7 @@ class TestEdgeCases:
         payload = {
             "to_list": ["user@example.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -803,6 +834,7 @@ class TestEmailRegexValidation:
         """Test that email with leading dot in local part is rejected."""
         payload = {
             "to_list": [".user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -812,6 +844,7 @@ class TestEmailRegexValidation:
         """Test that email with trailing dot in local part is rejected."""
         payload = {
             "to_list": ["user.@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -821,6 +854,7 @@ class TestEmailRegexValidation:
         """Test that email with consecutive dots in local part is rejected."""
         payload = {
             "to_list": ["user..name@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -830,6 +864,7 @@ class TestEmailRegexValidation:
         """Test that email with leading hyphen in domain is rejected."""
         payload = {
             "to_list": ["user@-example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -839,6 +874,7 @@ class TestEmailRegexValidation:
         """Test that email with trailing hyphen in domain label is rejected."""
         payload = {
             "to_list": ["user@example-.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -851,6 +887,7 @@ class TestEmailRegexValidation:
 
         payload = {
             "to_list": ["user+tag@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -863,6 +900,7 @@ class TestEmailRegexValidation:
 
         payload = {
             "to_list": ["user@my-domain.example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -875,6 +913,7 @@ class TestEmailRegexValidation:
 
         payload = {
             "to_list": ["a@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -884,6 +923,7 @@ class TestEmailRegexValidation:
         """Test that non-string items in to_list are rejected."""
         payload = {
             "to_list": [123, True],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -915,6 +955,7 @@ class TestSecretManagerEdgeCases:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -960,6 +1001,7 @@ class TestSendGridResponseValidation:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -982,6 +1024,7 @@ class TestSendGridResponseValidation:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -997,6 +1040,7 @@ class TestSendGridResponseValidation:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1036,6 +1080,7 @@ class TestFirestoreEdgeCases:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1076,6 +1121,7 @@ class TestMaxRecipientValidation:
         """Test that to_list exceeding MAX_RECIPIENTS is rejected."""
         payload = {
             "to_list": [f"user{i}@example.com" for i in range(MAX_RECIPIENTS + 1)],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1087,6 +1133,7 @@ class TestMaxRecipientValidation:
         payload = {
             "to_list": ["user@example.com"],
             "cc_list": [f"cc{i}@example.com" for i in range(MAX_RECIPIENTS + 1)],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1100,6 +1147,7 @@ class TestMaxRecipientValidation:
 
         payload = {
             "to_list": [f"user{i}@example.com" for i in range(MAX_RECIPIENTS)],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1113,6 +1161,7 @@ class TestInputTypeValidation:
         """Test that to_list as a plain string (not list) is rejected."""
         payload = {
             "to_list": "user@example.com",
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1122,6 +1171,7 @@ class TestInputTypeValidation:
         """Test that numeric mail_body is rejected by Pydantic strict typing."""
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": 12345
         }
         response = client.post("/send-email", json=payload)
@@ -1131,6 +1181,7 @@ class TestInputTypeValidation:
         """Test that '@' alone is rejected."""
         payload = {
             "to_list": ["@"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1140,6 +1191,7 @@ class TestInputTypeValidation:
         """Test that email without domain is rejected."""
         payload = {
             "to_list": ["user@"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1149,6 +1201,7 @@ class TestInputTypeValidation:
         """Test that email without local part is rejected."""
         payload = {
             "to_list": ["@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1166,6 +1219,7 @@ class TestInputTypeValidation:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Hello</p><script>alert('xss')</script>"
         }
         response = client.post("/send-email", json=payload)
@@ -1176,6 +1230,7 @@ class TestInputTypeValidation:
         """Test that whitespace-only string in to_list is rejected."""
         payload = {
             "to_list": ["  "],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1194,6 +1249,7 @@ class TestSendGridApiKeyEndpointFlow:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1208,6 +1264,7 @@ class TestSendGridApiKeyEndpointFlow:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1232,16 +1289,16 @@ class TestFirestoreDomainTypeValidation:
         assert result == []
 
     def test_firestore_domains_field_is_dict(self, mock_firestore):
-        """Test when Firestore domains field is a dict."""
+        """Test when Firestore domains field is a dict — values are extracted."""
         mock_db = MagicMock()
         mock_firestore.return_value = mock_db
         mock_doc = MagicMock()
         mock_doc.exists = True
-        mock_doc.to_dict.return_value = {"domains": {"key": "value"}}
+        mock_doc.to_dict.return_value = {"domains": {"0": "example.com", "1": "other.com"}}
         mock_db.collection.return_value.document.return_value.get.return_value = mock_doc
 
         result = get_allowed_domains()
-        assert result == []
+        assert result == ["example.com", "other.com"]
 
 
 class TestBQAuditLogging:
@@ -1262,6 +1319,7 @@ class TestBQAuditLogging:
         payload = {
             "to_list": ["user@example.com"],
             "cc_list": ["cc@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1281,6 +1339,7 @@ class TestBQAuditLogging:
         payload = {
             "to_list": ["user@blocked.com"],
             "cc_list": [],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1302,6 +1361,7 @@ class TestBQAuditLogging:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1321,6 +1381,7 @@ class TestBQAuditLogging:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1339,6 +1400,7 @@ class TestBQAuditLogging:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post(
@@ -1359,6 +1421,7 @@ class TestBQAuditLogging:
 
         payload = {
             "to_list": ["user@example.com"],
+            "subject": "Test Email",
             "mail_body": "<p>Test</p>"
         }
         response = client.post("/send-email", json=payload)
@@ -1495,6 +1558,165 @@ class TestCcDeduplication:
             cc_list=["carol@example.com", "alice@example.com", "dave@example.com"],
         )
         assert req.cc_list == ["carol@example.com", "dave@example.com"]
+
+
+class TestRequestId:
+    """Every response must contain a unique request_id (UUID4)."""
+
+    _valid_payload = {
+        "to_list": ["user@example.com"],
+        "subject": "Test Email",
+        "mail_body": "<p>Test</p>",
+    }
+
+    def _is_uuid4(self, val):
+        import uuid
+        try:
+            return uuid.UUID(val).version == 4
+        except (ValueError, AttributeError):
+            return False
+
+    def test_success_response_has_request_id(self, client, mock_firestore, mock_sendgrid):
+        _setup_firestore_mock(mock_firestore)
+        _setup_sendgrid_mock(mock_sendgrid)
+
+        response = client.post("/send-email", json=self._valid_payload)
+        assert response.status_code == 200
+        body = response.json()
+        assert "request_id" in body
+        assert self._is_uuid4(body["request_id"])
+
+    def test_validation_error_response_has_request_id(self, client):
+        payload = {"to_list": [], "subject": "X", "mail_body": "<p>Y</p>"}
+        response = client.post("/send-email", json=payload)
+        assert response.status_code == 422
+        body = response.json()
+        assert "request_id" in body
+        assert self._is_uuid4(body["request_id"])
+
+    def test_blocked_domain_error_has_request_id(self, client, mock_firestore):
+        _setup_firestore_mock(mock_firestore, blocked=["blocked.com"])
+        payload = {**self._valid_payload, "to_list": ["x@blocked.com"]}
+        response = client.post("/send-email", json=payload)
+        assert response.status_code == 403
+        body = response.json()
+        assert "request_id" in body
+        assert self._is_uuid4(body["request_id"])
+
+    def test_missing_subject_422_has_request_id(self, client):
+        payload = {"to_list": ["a@b.com"], "mail_body": "<p>X</p>"}
+        response = client.post("/send-email", json=payload)
+        assert response.status_code == 422
+        body = response.json()
+        assert "request_id" in body
+        assert self._is_uuid4(body["request_id"])
+
+    def test_request_ids_are_unique_across_calls(self, client, mock_firestore, mock_sendgrid):
+        _setup_firestore_mock(mock_firestore)
+        _setup_sendgrid_mock(mock_sendgrid)
+
+        r1 = client.post("/send-email", json=self._valid_payload).json()
+        r2 = client.post("/send-email", json=self._valid_payload).json()
+        assert r1["request_id"] != r2["request_id"]
+
+    def test_request_id_in_response_header(self, client, mock_firestore, mock_sendgrid):
+        _setup_firestore_mock(mock_firestore)
+        _setup_sendgrid_mock(mock_sendgrid)
+
+        response = client.post("/send-email", json=self._valid_payload)
+        assert "X-Request-ID" in response.headers
+        assert self._is_uuid4(response.headers["X-Request-ID"])
+        assert response.json()["request_id"] == response.headers["X-Request-ID"]
+
+
+class TestValidationErrorBQAudit:
+    """Pydantic validation errors (422) should be logged to BQ via app.py handler."""
+
+    def test_validation_error_logs_to_bq(self, client, monkeypatch):
+        monkeypatch.setenv("BQ_AUDIT_ENABLED", "true")
+
+        with patch('app.log_audit') as mock_app_audit:
+            payload = {"to_list": [], "subject": "X", "mail_body": "<p>Y</p>"}
+            response = client.post("/send-email", json=payload)
+
+            assert response.status_code == 422
+            mock_app_audit.assert_called_once()
+            call_kwargs = mock_app_audit.call_args
+            assert call_kwargs[0][4] == "failure"
+            assert call_kwargs[0][5] == 422
+            assert call_kwargs[1]["request_id"]  # request_id passed as kwarg
+
+    def test_missing_field_validation_logs_to_bq(self, client, monkeypatch):
+        monkeypatch.setenv("BQ_AUDIT_ENABLED", "true")
+
+        with patch('app.log_audit') as mock_app_audit:
+            payload = {"to_list": ["a@b.com"], "mail_body": "<p>X</p>"}
+            response = client.post("/send-email", json=payload)
+
+            assert response.status_code == 422
+            mock_app_audit.assert_called_once()
+            assert "request_id" in mock_app_audit.call_args[1]
+
+    def test_request_id_matches_between_bq_and_response(self, client, monkeypatch):
+        monkeypatch.setenv("BQ_AUDIT_ENABLED", "true")
+
+        with patch('app.log_audit') as mock_app_audit:
+            payload = {"to_list": [], "subject": "X", "mail_body": "<p>Y</p>"}
+            response = client.post("/send-email", json=payload)
+
+            body = response.json()
+            bq_request_id = mock_app_audit.call_args[1]["request_id"]
+            assert body["request_id"] == bq_request_id
+
+
+class TestBQAuditRequestId:
+    """Existing route-level BQ audit calls must include request_id."""
+
+    @pytest.fixture
+    def mock_bq_audit(self):
+        with patch('routes.log_audit') as mock_log:
+            yield mock_log
+
+    def test_success_audit_includes_request_id(self, client, mock_firestore, mock_sendgrid, mock_bq_audit):
+        _setup_firestore_mock(mock_firestore)
+        _setup_sendgrid_mock(mock_sendgrid)
+
+        payload = {
+            "to_list": ["user@example.com"],
+            "subject": "Test Email",
+            "mail_body": "<p>Test</p>",
+        }
+        response = client.post("/send-email", json=payload)
+        assert response.status_code == 200
+
+        bq_request_id = mock_bq_audit.call_args[1]["request_id"]
+        assert bq_request_id == response.json()["request_id"]
+
+    def test_blocked_domain_audit_includes_request_id(self, client, mock_firestore, mock_bq_audit):
+        _setup_firestore_mock(mock_firestore, blocked=["blocked.com"])
+
+        payload = {
+            "to_list": ["user@blocked.com"],
+            "subject": "Test Email",
+            "mail_body": "<p>Test</p>",
+        }
+        response = client.post("/send-email", json=payload)
+        assert response.status_code == 403
+        assert mock_bq_audit.call_args[1]["request_id"]
+
+    def test_value_error_audit_includes_request_id(self, client, monkeypatch, mock_firestore, mock_bq_audit):
+        monkeypatch.delenv("SENDGRID_API_KEY", raising=False)
+        monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
+        _setup_firestore_mock(mock_firestore)
+
+        payload = {
+            "to_list": ["user@example.com"],
+            "subject": "Test Email",
+            "mail_body": "<p>Test</p>",
+        }
+        response = client.post("/send-email", json=payload)
+        assert response.status_code == 422
+        assert mock_bq_audit.call_args[1]["request_id"]
 
 
 if __name__ == "__main__":
