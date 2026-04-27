@@ -14,7 +14,7 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     setup_logging()
 
-    app = FastAPI(title="Email Sending API", version="2.1.0")
+    app = FastAPI(title="Email Sending API", version="2.2.0")
 
     @app.middleware("http")
     async def add_request_id(request: Request, call_next):

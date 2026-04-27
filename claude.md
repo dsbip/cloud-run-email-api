@@ -1,7 +1,7 @@
 # Email Sending API - Learnings and Patterns
 
 ## Project Overview
-FastAPI-based email sending service with domain validation, Firestore integration for blocked/allowed domains, SendGrid API integration (with **per-request `subject`**), and BigQuery audit logging — designed for Google Cloud Run deployment.
+FastAPI-based email sending service with domain validation, Firestore integration for blocked/allowed domains, SendGrid API integration (with **per-request `subject`**), BigQuery audit logging, **UUID4 request tracing**, **CC deduplication**, and **strict payload validation** — designed for Google Cloud Run deployment.
 
 The OpenAPI spec (`swagger.yaml`) is the source of truth for the public contract
 and embeds copy-paste `x-codeSamples` for curl / Python / JS / Node / Go.
@@ -12,8 +12,8 @@ The codebase follows a **modular architecture** with clear separation of concern
 ```
 bt/
 ├── main.py                          # Thin entry point (imports app factory)
-├── app.py                           # FastAPI app factory + exception handlers
-├── models.py                        # Pydantic request models + validators
+├── app.py                           # FastAPI app factory + request_id middleware + exception handlers
+├── models.py                        # Pydantic request models + validators + CC dedup
 ├── routes.py                        # API route handlers (/send-email, /health)
 ├── services/
 │   ├── __init__.py
@@ -158,7 +158,7 @@ except Exception as e:
 ### 11. **BigQuery Audit Logging**
 - **Purpose**: Log every `/send-email` API request to BigQuery for audit trail
 - **Module**: `utilities/bq_audit_logger.py`
-- **Requestor Identity**: Extracted from `X-Requestor-Email` request header (defaults to `"unknown"`)
+- **Requestor Identity**: Extracted from `x-requestor-system` request header (defaults to `"unknown"`)
 - **Client IP**: Extracted from `request.client.host`
 - **Write Mode**: Synchronous (`insert_rows_json`) — blocks until insert completes
 - **Graceful Failure**: BQ errors are logged as warnings but never propagate to the caller; audit failures cannot break the API
@@ -168,7 +168,8 @@ except Exception as e:
 | Column | Type | Description |
 |---|---|---|
 | `timestamp` | TIMESTAMP | When the request was made |
-| `requestor` | STRING | Value of `X-Requestor-Email` header |
+| `request_id` | STRING | UUID4 request identifier for end-to-end tracing |
+| `requestor` | STRING | Value of `x-requestor-system` header |
 | `client_ip` | STRING | Caller's IP address |
 | `to_list` | STRING (REPEATED) | Recipient email list |
 | `cc_list` | STRING (REPEATED) | CC email list |
@@ -312,7 +313,7 @@ This pattern is essential for test isolation: `monkeypatch.setenv()` runs after 
 7. ✅ No hardcoded credentials
 8. ✅ Input validation with Pydantic
 9. ✅ Audit trail via BigQuery (requestor identity, IP, status, error details)
-10. ✅ Requestor identity tracking via `X-Requestor-Email` header
+10. ✅ Requestor identity tracking via `x-requestor-system` header
 
 ---
 
@@ -964,7 +965,7 @@ When modularizing, **all mock paths must be updated** to target the new module l
 
 **13. Endpoint Signature Change for Audit Logging**
 - **Change**: `send_email(request: EmailRequest)` → `send_email(request: Request, body: EmailRequest)`
-- **Reason**: FastAPI's `Request` object needed to access headers (`X-Requestor-Email`) and client IP (`request.client.host`)
+- **Reason**: FastAPI's `Request` object needed to access headers (`x-requestor-system`) and client IP (`request.client.host`)
 - **Pattern**: When you need both the raw request and a Pydantic body, accept `Request` first and the body parameter second
 
 **14. SendGrid Non-2xx → HTTP 502 Bad Gateway**
@@ -1024,19 +1025,69 @@ When modularizing, **all mock paths must be updated** to target the new module l
 
 **21. OpenAPI `x-codeSamples` for ready-to-run snippets**
 - **Pattern**: Add an `x-codeSamples` array under each operation, with `lang` / `label` / `source` entries. Redoc, SwaggerHub, and several API portal generators render these as a copy-paste code panel per endpoint.
-- **Keep samples runnable**: Include required headers (`X-Requestor-Email`, `Content-Type`) and the full request body — a sample that 422s on copy-paste is worse than no sample.
+- **Keep samples runnable**: Include required headers (`x-requestor-system`, `Content-Type`) and the full request body — a sample that 422s on copy-paste is worse than no sample.
 - **Keep samples in the spec, not a separate doc**: Doc sites that consume the spec pick them up automatically; drift is impossible when the sample lives next to the schema it exercises.
 
 ### Test / verification checklist for this change set
-- [ ] Update `conftest.py` / `test_main.py` fixtures to include `subject` in every `/send-email` payload.
-- [ ] Add parametrised tests covering `domains` as a list AND as a dict in Firestore.
-- [ ] Add a test for `subject` validator (empty string / whitespace-only → 422).
+- [x] Update `conftest.py` / `test_main.py` fixtures to include `subject` in every `/send-email` payload.
+- [x] Add parametrised tests covering `domains` as a list AND as a dict in Firestore.
+- [x] Add a test for `subject` validator (empty string / whitespace-only → 422).
 - [ ] Either revert the hardcoded `database='default-dev'` or add a test asserting the id read from env.
-- [ ] Re-run `pytest --cov=.` and update coverage numbers below.
+- [x] Re-run `pytest --cov=.` and update coverage numbers below.
 
 ---
 
-**Last Updated**: 2026-04-16
-**Project Version**: 2.1.0
+## Request Tracing, CC Dedup, Strict Validation, and BQ Logging Improvements (2026-04-23)
+
+### What changed
+- **UUID4 request_id** on every response: ASGI middleware in `app.py` generates `request.state.request_id`, adds it to every response body and `x-request-id` response header.
+- **`x-requestor-system` header** (lowercase): renamed from `X-Requestor-Email`. Identifies the calling system for audit logging.
+- **`x-request-id` response header**: renamed from `X-Request-ID`.
+- **CC deduplication**: `model_validator(mode='after')` in `models.py` removes any `cc_list` addresses that already appear in `to_list`. Case-insensitive, preserves CC ordering.
+- **`extra="forbid"`**: `ConfigDict(extra="forbid")` on `EmailRequest` rejects unknown fields with 422, catching typos like `email_body` instead of `mail_body`.
+- **Validation errors logged to BQ**: `RequestValidationError` handler in `app.py` calls `log_audit()` with the error summary, so Pydantic 422 errors appear in the BigQuery audit trail.
+- **Unhandled exceptions logged to BQ**: catch-all `Exception` handler in `app.py` calls `log_audit()` for 500 errors.
+- **`request_id` in BQ**: `log_audit()` accepts `request_id: str = ""` parameter; the id is written to a `request_id` column in the BQ audit table.
+- **`request_id` in success response**: `routes.py` adds `result["request_id"] = request_id` before returning the success dict.
+
+### Learnings
+
+**22. ASGI middleware for request-scoped state**
+- **Pattern**: Use `@app.middleware("http")` to set `request.state.request_id` before route handlers run, and add the header to the response after.
+- **Fallback**: Routes and exception handlers use `getattr(request.state, "request_id", str(uuid.uuid4()))` to handle edge cases where middleware hasn't run (e.g., middleware itself raises).
+- **Lesson**: `request.state` is the canonical way to pass per-request data across middleware → route → exception handler in FastAPI/Starlette.
+
+**23. CC deduplication at the Pydantic layer**
+- **Pattern**: Use `@model_validator(mode='after')` to modify the model after all field validators pass.
+- **Why Pydantic layer, not route layer**: All downstream code (routes, SendGrid, audit) sees the deduplicated data automatically. No risk of forgetting to dedup before a specific call.
+- **Case-insensitive**: Build a `set` of lowered TO addresses, filter CC by `email.lower() not in to_set`.
+- **Ordering**: List comprehension preserves original CC ordering for remaining entries.
+
+**24. `ConfigDict(extra="forbid")` for strict request validation**
+- **Pattern**: Adding `model_config = ConfigDict(extra="forbid")` to `EmailRequest` causes Pydantic to reject any field not defined in the model.
+- **Benefit**: Catches typos (e.g., `email_body` vs `mail_body`) at the API boundary with a clear error message: `"Extra inputs are not permitted"`.
+- **Breaking change**: Any existing caller sending extra fields will now get 422 instead of having them silently ignored.
+- **Test impact**: Tests that sent extra fields expecting 200 must be updated to expect 422.
+
+**25. Logging validation errors to BigQuery**
+- **Pattern**: `RequestValidationError` exception handler in `app.py` calls `log_audit()` with error summary before returning 422.
+- **Error summary construction**: `"; ".join(e.get("msg", "") for e in sanitized)` produces a single-line summary of all validation errors for the BQ `error_detail` column.
+- **Serialization**: Pydantic v2 errors can contain non-serializable types (e.g., `PydanticUndefinedType`). The `_make_serializable()` helper recursively converts everything to JSON-safe primitives.
+- **Lesson**: Exception handlers in `app.py` run *before* route handlers, so they don't have access to `to_list`/`cc_list` — pass empty lists `[]` to `log_audit()`.
+
+**26. Header naming convention: lowercase**
+- **Before**: `X-Requestor-Email`, `X-Request-ID` (mixed case, old convention).
+- **After**: `x-requestor-system`, `x-request-id` (all lowercase).
+- **Reason**: HTTP headers are case-insensitive per RFC 7230, but using lowercase is the modern convention (HTTP/2 mandates lowercase). The semantic rename from `Email` to `system` reflects that the header identifies the calling *system/application*, not a person's email.
+- **Impact**: Update all code, tests, swagger specs, docs, and curl examples.
+
+### Test Results After These Changes
+- **Total: 127 tests, all passing**
+- Test classes added: `TestCcDeduplication` (7), `TestRequestId` (6), `TestValidationErrorBQAudit` (5), `TestBQAuditRequestId` (3), `TestExtraFieldRejection` (2)
+
+---
+
+**Last Updated**: 2026-04-23
+**Project Version**: 2.2.0
 **Docker Image Size**: 212MB (optimized from 428MB via multi-stage build)
-**Known pending work**: test suite needs `subject` added to fixtures; Firestore dict-shape tests pending.
+**Known pending work**: Firestore `database='default-dev'` is hardcoded — should be promoted to env var.

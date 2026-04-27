@@ -41,7 +41,7 @@ info:
     - **Go** —
       `idtoken.NewClient(ctx, SERVICE_URL)` from
       `google.golang.org/api/idtoken`
-  version: 2.1.0
+  version: 2.2.0
   contact:
     name: API Support
 
@@ -127,11 +127,22 @@ paths:
         caller-supplied `subject`.
 
         **Processing steps:**
-        1. Pydantic validates email format, `subject`, and required fields
+        1. Pydantic validates email format, `subject`, and required fields; unknown fields are rejected
         2. Recipient domains are checked against the blocked list
         3. Recipient domains are checked against the allowed list (if configured)
-        4. Email is sent via SendGrid with the request-supplied subject
-        5. Request is logged to BigQuery for audit
+        4. Duplicate CC addresses (already in `to_list`) are silently removed
+        5. Email is sent via SendGrid with the request-supplied subject
+        6. Request is logged to BigQuery for audit (including the `request_id`)
+
+        **Request tracing:**
+        Every response includes a unique `request_id` (UUID4) in both the
+        JSON body and the `x-request-id` response header. The same id is
+        written to the BigQuery audit log for end-to-end correlation.
+
+        **Strict payload validation:**
+        Unknown fields in the request body are rejected with 422
+        (`"Extra inputs are not permitted"`). This catches typos like
+        `email_body` instead of `mail_body` at the API boundary.
 
         **Domain policy:**
         - Blocked domains are checked first — any match returns 403
@@ -239,6 +250,13 @@ paths:
                     status: success
                     message: Email sent successfully
                     status_code: 202
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+          headers:
+            x-request-id:
+              description: Unique request identifier (UUID4) for tracing
+              schema:
+                type: string
+                format: uuid
         "401":
           description: Missing or invalid OIDC token
           content:
@@ -258,10 +276,18 @@ paths:
                   summary: Blocked domain
                   value:
                     detail: "Email address 'user@blocked.com' belongs to a blocked domain"
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
                 not_allowed:
                   summary: Domain not in allowlist
                   value:
                     detail: "Email address 'user@unknown.com' does not belong to an allowed domain"
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+          headers:
+            x-request-id:
+              description: Unique request identifier (UUID4) for tracing
+              schema:
+                type: string
+                format: uuid
         "422":
           description: Unprocessable Entity — validation error or missing configuration
           content:
@@ -279,6 +305,7 @@ paths:
                           - 0
                         msg: "Value error, Invalid email address: not-an-email"
                         type: value_error
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
                 empty_subject:
                   summary: Empty subject
                   value:
@@ -288,6 +315,7 @@ paths:
                           - subject
                         msg: "Value error, subject cannot be empty"
                         type: value_error
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
                 empty_body:
                   summary: Empty mail body
                   value:
@@ -297,10 +325,22 @@ paths:
                           - mail_body
                         msg: "Value error, mail_body cannot be empty"
                         type: value_error
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+                extra_field:
+                  summary: Unknown field (typo)
+                  value:
+                    detail:
+                      - loc:
+                          - body
+                          - email_body
+                        msg: "Extra inputs are not permitted"
+                        type: extra_forbidden
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
                 missing_config:
                   summary: Missing configuration (e.g., SENDER_EMAIL)
                   value:
                     detail: "SENDER_EMAIL environment variable not set"
+                    request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
         "502":
           description: Bad Gateway — upstream service failure (SendGrid or Secret Manager)
           content:
@@ -309,6 +349,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 detail: "SendGrid API failed with status 400: Bad Request"
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+          headers:
+            x-request-id:
+              description: Unique request identifier (UUID4) for tracing
+              schema:
+                type: string
+                format: uuid
         "500":
           description: Internal Server Error — unexpected failure
           content:
@@ -317,6 +364,13 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
               example:
                 detail: An unexpected error occurred while sending the email
+                request_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+          headers:
+            x-request-id:
+              description: Unique request identifier (UUID4) for tracing
+              schema:
+                type: string
+                format: uuid
 
 components:
   securitySchemes:
@@ -384,6 +438,11 @@ components:
         status_code:
           type: integer
           example: 202
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
     ErrorResponse:
       type: object
@@ -391,6 +450,11 @@ components:
         detail:
           type: string
           description: Human-readable error message
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
     ValidationErrorResponse:
       type: object
@@ -413,6 +477,11 @@ components:
               type:
                 type: string
                 description: Error type identifier
+        request_id:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 
     HealthResponse:
       type: object

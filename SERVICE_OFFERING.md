@@ -21,13 +21,16 @@ A team sends a `POST /send-email` request with recipients, subject, and
 an HTML body. The service:
 
 1. Validates the request (email format, recipient caps, non-empty subject
-   and body).
+   and body, no unknown fields).
 2. Rejects the send if any recipient domain is on the **blocked** list.
 3. Rejects the send if an **allowlist** is configured and a recipient
    domain isn't on it.
-4. Forwards the message to SendGrid for delivery.
-5. Writes an audit record to BigQuery (requestor, recipients, status,
-   timestamp, client IP).
+4. Removes duplicate CC addresses that already appear in the TO list.
+5. Forwards the message to SendGrid for delivery.
+6. Returns a unique `request_id` (UUID4) in the response body and
+   `x-request-id` response header.
+7. Writes an audit record to BigQuery (request_id, requestor,
+   recipients, status, timestamp, client IP).
 
 Callers never hold a SendGrid API key, never manage deliverability, and
 never run their own SMTP relay. One team owns those concerns; everyone
@@ -56,7 +59,11 @@ What our service adds on top:
 
 - **Central audit trail** — every send is logged to BigQuery with the
   caller's identity, so we can answer "who sent what, when" without
-  going to SendGrid's UI.
+  going to SendGrid's UI. Validation errors (422) are also logged.
+- **Request tracing** — every response includes a unique `request_id`
+  (UUID4) in both the JSON body and the `x-request-id` response header.
+  The same id is written to BigQuery, enabling end-to-end correlation
+  between caller logs and the audit trail.
 - **Domain policy** — a Firestore-backed blocklist and allowlist let us
   block known-bad domains or enforce "only send to `@example.com`"
   without modifying SendGrid configuration.
@@ -64,6 +71,12 @@ What our service adds on top:
   header that identifies the upstream application or service (e.g.,
   `billing-service`, `crm-app`), independent of the service-account
   used to invoke the service.
+- **CC deduplication** — if the same address appears in both `to_list`
+  and `cc_list`, the service automatically removes it from CC to avoid
+  duplicate delivery.
+- **Strict payload validation** — unknown request fields are rejected
+  immediately (HTTP 422), catching common typos like `email_body`
+  instead of `mail_body` at the API boundary.
 - **Verified sender** — callers do not choose the `from` address; the
   service enforces a single verified sender, so deliverability is never
   put at risk by a caller misconfiguration.
@@ -166,16 +179,21 @@ Successful response (HTTP 200):
 {
   "status": "success",
   "message": "Email sent successfully",
-  "status_code": 202
+  "status_code": 202,
+  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 }
 ```
+
+Every response also includes an `x-request-id` response header with the
+same UUID. Save this value — the support team can use it to look up the
+exact BigQuery audit row for your request.
 
 | HTTP status | Meaning |
 |---|---|
 | 200 | Accepted by SendGrid for delivery |
 | 401 | Missing or invalid OIDC token |
 | 403 | Recipient domain blocked, or not on the allowlist |
-| 422 | Validation error — invalid email, empty subject/body, or too many recipients |
+| 422 | Validation error — invalid email, empty subject/body, unknown fields, or too many recipients |
 | 502 | Upstream failure (SendGrid or Secret Manager) |
 | 500 | Unexpected internal error (contact support) |
 
@@ -205,9 +223,9 @@ described in the Deployment Guide page.)
   - Timestamp of the failing request (UTC)
   - Requestor system identifier sent in `x-requestor-system`
   - HTTP status and response body you received
-  - For 500/502 errors: a correlation ID from your own logs if
-    available — the support team can cross-reference it against
-    Cloud Run logs and BigQuery audit records.
+  - The `request_id` from the response body or `x-request-id` response
+    header — the support team can look up the exact BigQuery audit row
+    and Cloud Run logs using this identifier.
 - **Business-hours support** is the default. For production-impacting
   incidents, follow your organisation's standard on-call escalation
   path and include **<SUPPORT_TEAM_EMAIL>** on the thread.

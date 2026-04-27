@@ -5,11 +5,15 @@ A FastAPI-based email sending service with domain blocking and SendGrid integrat
 ## Features
 
 - ✉️ Send emails via SendGrid API
-- ✅ Email address validation
-- 🚫 Blocked domain checking via Firestore
+- ✅ Email address validation (with strict field rejection for typos)
+- 🚫 Blocked domain checking and allowlisting via Firestore
 - 🔐 Secure credential management via Secret Manager
 - 🐳 Dockerized for Cloud Run deployment
 - 📝 HTML email support
+- 🔄 Automatic CC deduplication (addresses in both TO and CC kept only in TO)
+- 🆔 Unique `request_id` (UUID4) on every response for end-to-end tracing
+- 📊 BigQuery audit logging (all requests, including validation errors)
+- 🏷️ Caller attribution via `x-requestor-system` header
 
 ## API Endpoint
 
@@ -27,29 +31,57 @@ Send an email to specified recipients with optional CC.
 }
 ```
 
-> `subject` is now a **required** field on every request. The legacy
-> `EMAIL_SUBJECT` env var is no longer consulted.
+> `subject` is a **required** field on every request.
+
+> **CC deduplication**: Any address that appears in both `to_list` and `cc_list`
+> is automatically removed from `cc_list` (kept only in TO).
+
+> **Strict validation**: Unknown fields (e.g., `email_body` instead of
+> `mail_body`) are rejected with 422.
+
+**Headers:**
+
+| Header | Required | Description |
+|--------|----------|-------------|
+| `Content-Type` | Yes | Must be `application/json` |
+| `x-requestor-system` | No | Caller identifier for audit logging (defaults to `"unknown"`) |
+| `Authorization` | Yes* | `Bearer <OIDC-token>` when deployed with IAM auth |
 
 **Response (Success):**
 ```json
 {
   "status": "success",
   "message": "Email sent successfully",
-  "status_code": 202
+  "status_code": 202,
+  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 }
 ```
+
+Every response also includes an `x-request-id` response header with the same UUID.
 
 **Response (Error - Invalid Email):**
 ```json
 {
-  "detail": "Invalid email address: invalid-email"
+  "detail": "Invalid email address: invalid-email",
+  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 }
 ```
 
 **Response (Error - Blocked Domain):**
 ```json
 {
-  "detail": "Email address 'user@blocked.com' belongs to a blocked domain"
+  "detail": "Email address 'user@blocked.com' belongs to a blocked domain",
+  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+}
+```
+
+**Response (Error - Unknown Field):**
+```json
+{
+  "detail": [
+    {"loc": ["body", "email_body"], "msg": "Extra inputs are not permitted", "type": "extra_forbidden"}
+  ],
+  "request_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479"
 }
 ```
 
@@ -250,17 +282,38 @@ npx @redocly/cli build-docs swagger.yaml -o swagger.html
 |-------------|-------------|
 | 200 | Email sent successfully |
 | 403 | Blocked domain detected, or recipient not in allowlist |
-| 422 | Validation error (invalid email, empty `subject`, empty `mail_body`, missing config) |
+| 422 | Validation error (invalid email, empty `subject`, empty `mail_body`, unknown fields, missing config) |
 | 502 | Upstream failure (SendGrid non-2xx or Secret Manager error) |
 | 500 | Unexpected internal error |
+
+All error responses include a `request_id` field and `x-request-id` response header for tracing.
+All requests (success and failure, including 422 validation errors) are logged to BigQuery.
+
+## BigQuery Audit Log
+
+Every `/send-email` request is logged to BigQuery, including validation errors.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `timestamp` | TIMESTAMP | When the request was made |
+| `request_id` | STRING | UUID4 request identifier |
+| `requestor` | STRING | Value of `x-requestor-system` header |
+| `client_ip` | STRING | Caller's IP address |
+| `to_list` | STRING (REPEATED) | Recipient email list |
+| `cc_list` | STRING (REPEATED) | CC email list |
+| `status` | STRING | `success` or `failure` |
+| `status_code` | INTEGER | HTTP status code returned |
+| `error_detail` | STRING | Error description (empty on success) |
 
 ## Security Considerations
 
 - API runs as non-root user in Docker container
 - Credentials stored in Secret Manager (recommended) or environment variables
 - Email validation prevents malformed addresses
-- Domain blocking prevents sending to unwanted recipients
+- Strict field validation rejects unknown request fields
+- Domain blocking and allowlisting prevents sending to unwanted recipients
 - Service account with minimal required permissions
+- Audit trail via BigQuery for all requests
 
 ## License
 
