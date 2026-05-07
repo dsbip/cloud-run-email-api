@@ -36,6 +36,42 @@ Callers never hold a SendGrid API key, never manage deliverability, and
 never run their own SMTP relay. One team owns those concerns; everyone
 else owns only their payload.
 
+### Request processing flow
+
+```mermaid
+flowchart TD
+    A["Caller sends POST /send-email\n(to_list, cc_list, subject, mail_body)"] --> B["ASGI Middleware\nAssign UUID4 request_id"]
+    B --> C{"Pydantic Validation\n• Email format\n• Non-empty subject & body\n• Reject unknown fields\n• Max 500 recipients"}
+    C -- "Fail" --> V["Return 422\n+ request_id\n+ Log to BigQuery"]
+    C -- "Pass" --> D["CC Deduplication\nRemove cc_list entries\nalready in to_list"]
+    D --> E["Fetch blocked domains\nfrom Firestore"]
+    E --> F{"Any recipient on\nblocked list?"}
+    F -- "Yes" --> G["Return 403\n'belongs to a blocked domain'\n+ request_id\n+ Log to BigQuery"]
+    F -- "No" --> H["Fetch allowed domains\nfrom Firestore"]
+    H --> I{"Allowlist configured\nAND recipient not\non it?"}
+    I -- "Yes" --> J["Return 403\n'does not belong to an allowed domain'\n+ request_id\n+ Log to BigQuery"]
+    I -- "No" --> K["Retrieve SendGrid API key\n(env var → Secret Manager)"]
+    K -- "Missing" --> L["Return 422\n'config not set'\n+ request_id\n+ Log to BigQuery"]
+    K -- "OK" --> M["Send email via\nSendGrid API"]
+    M -- "SendGrid non-2xx" --> N["Return 502\nSendGrid error detail\n+ request_id\n+ Log to BigQuery"]
+    M -- "SendGrid 2xx" --> O["Return 200\n{status: success,\nstatus_code: 202,\nrequest_id: uuid}\n+ x-request-id header"]
+    O --> P["Log to BigQuery\n(requestor, recipients,\nstatus, request_id)"]
+
+    style A fill:#4A90D9,color:#fff
+    style V fill:#D94A4A,color:#fff
+    style G fill:#D94A4A,color:#fff
+    style J fill:#D94A4A,color:#fff
+    style L fill:#D94A4A,color:#fff
+    style N fill:#D94A4A,color:#fff
+    style O fill:#2ECC71,color:#fff
+    style P fill:#F39C12,color:#fff
+```
+
+> **Rendering note:** This diagram uses [Mermaid](https://mermaid.js.org/)
+> syntax. It renders natively on GitHub, GitLab, and in Confluence (with
+> the Mermaid plugin or the "Mermaid Diagrams for Confluence" app). To
+> render locally: `npx @mermaid-js/mermaid-cli mmdc -i SERVICE_OFFERING.md -o flow.svg`.
+
 ---
 
 ## 2. About SendGrid (our delivery provider)
